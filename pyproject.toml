@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aislice"
+dynamic = ["version"]
+description = "Lock AI-generated music to a fixed BPM grid and slice it by bar/beat."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "VNL Works" }]
+keywords = ["audio", "bpm", "tempo", "beat-tracking", "time-stretch", "slicing", "ai-music"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio :: Analysis",
+  "Environment :: Console",
+]
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.24",
+  "scipy>=1.10",
+  "librosa>=0.10",
+  "soundfile>=0.12",
+  "matplotlib>=3.7",
+]
+
+[project.urls]
+Homepage = "https://github.com/VNL-Works/ai-music-slicer"
+Issues = "https://github.com/VNL-Works/ai-music-slicer/issues"
+
+[project.scripts]
+aislice = "aislice.cli:main"
+
+[tool.hatch.version]
+path = "src/aislice/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aislice"]

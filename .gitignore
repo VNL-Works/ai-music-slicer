@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+.venv/
+dist/
+build/
+aislice_output/
+temp/
+.DS_Store
+
+# internal planning docs (kept local, not published)
+SPEC.md

@@ -1,0 +1,38 @@
+name: Release to PyPI
+
+# Runs when a GitHub Release is published (tag vX.Y.Z).
+# Uses PyPI "Trusted Publishing", so no API token is stored in the repo.
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check tag matches package version
+        run: |
+          v=$(python -c "import re;print(re.search(r'__version__ = \"(.+?)\"', open('src/aislice/__init__.py').read()).group(1))")
+          test "v$v" = "${GITHUB_REF_NAME}" || (echo "tag ${GITHUB_REF_NAME} != version v$v" && exit 1)
+      - run: pip install build twine && python -m build && twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

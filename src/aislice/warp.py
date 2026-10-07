@@ -50,6 +50,16 @@ def plan(tm: TempoMap, src_duration: float, target_bpm: float, preroll_silent: b
     return WarpPlan(target_bpm, T, pad, preroll, P + d * T, src_pts, dst_pts, out_dur, ratios)
 
 
+def _has_r3() -> bool:
+    """Rubber Band >= 3 has the higher-quality R3 engine (--fine); older builds don't."""
+    try:
+        out = subprocess.run(["rubberband", "--help"], capture_output=True, text=True)
+        return "--fine" in (out.stdout + out.stderr)
+    except FileNotFoundError as e:
+        raise RuntimeError("the 'rubberband' command-line tool is not installed "
+                           "(macOS: brew install rubberband; Debian/Ubuntu: apt install rubberband-cli)") from e
+
+
 def render(src_wav: Path, wp: WarpPlan, sr: int, crisp: int = 5) -> np.ndarray:
     """Run rubberband with a time map; returns padded output (samples, channels)."""
     with tempfile.TemporaryDirectory() as td:
@@ -59,7 +69,8 @@ def render(src_wav: Path, wp: WarpPlan, sr: int, crisp: int = 5) -> np.ndarray:
             for s, d in zip(wp.src_points[1:-1], wp.dst_points[1:-1]):
                 f.write(f"{int(round(s * sr))} {int(round(d * sr))}\n")
         out = td / "out.wav"
-        subprocess.run(["rubberband", "-q", "--fine", f"--crisp", str(crisp),
+        engine = ["--fine"] if _has_r3() else []
+        subprocess.run(["rubberband", "-q", *engine, "--crisp", str(crisp),
                         "-M", str(mp), "-D", f"{wp.out_duration_s:.6f}",
                         str(src_wav), str(out)], check=True)
         y, osr = io.read(out)

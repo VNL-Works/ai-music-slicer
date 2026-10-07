@@ -25,9 +25,13 @@ dependencies = [
   "matplotlib>=3.7",
 ]
 
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
 [project.urls]
 Homepage = "https://github.com/VNL-Works/ai-music-slicer"
 Issues = "https://github.com/VNL-Works/ai-music-slicer/issues"
+Changelog = "https://github.com/VNL-Works/ai-music-slicer/blob/main/CHANGELOG.md"
 
 [project.scripts]
 aislice = "aislice.cli:main"
@@ -37,3 +41,10 @@ path = "src/aislice/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aislice"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src", "tests"]

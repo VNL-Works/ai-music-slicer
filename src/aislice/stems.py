@@ -17,14 +17,17 @@ from . import io
 
 MODEL_SR = 44100  # separation models run at 44.1 kHz; stems are resampled back to the song's rate
 
-# Presets use Demucs v4 weights (MIT licensed). Any audio-separator model can be used via --stem-model,
-# e.g. htdemucs_ft.yaml (best Demucs quality, ~4x slower) or a RoFormer model for vocals.
+# Presets use Demucs v4 weights (MIT licensed): htdemucs_ft (fine-tuned bag of 4 models) by default, which
+# beat htdemucs and BS-Roformer-SW in a listening comparison on our test tracks. Any audio-separator
+# model can be used via --stem-model.
 PRESETS = {
-    "2": ("htdemucs.yaml", "vocals + instrumental"),
-    "3": ("htdemucs.yaml", "drums, bass, melody (everything else)"),
-    "4": ("htdemucs.yaml", "vocals, drums, bass, other"),
+    "2": ("htdemucs_ft.yaml", "vocals + instrumental"),
+    "3": ("htdemucs_ft.yaml", "drums, bass, melody (everything else)"),
+    "4": ("htdemucs_ft.yaml", "vocals, drums, bass, other"),
     "6": ("htdemucs_6s.yaml", "vocals, drums, bass, guitar, piano, other"),
 }
+# --stems-fast: single Demucs model, ~4x faster, slightly lower quality (6 stems has no fine-tuned variant)
+FAST_MODEL = "htdemucs.yaml"
 # presets that merge model stems: output name -> model stems to keep (None = everything not listed)
 GROUPS = {
     "2": {"vocals": ["vocals"], "instrumental": None},
@@ -92,15 +95,21 @@ def _fit(y: np.ndarray, n: int, channels: int) -> np.ndarray:
     return np.concatenate([y, np.zeros((n - len(y), channels), y.dtype)])
 
 
+def preset_model(preset: str, fast: bool = False) -> str:
+    if preset not in PRESETS:
+        raise ValueError(f"unknown stems preset {preset!r} (use 2, 3, 4 or 6)")
+    m = PRESETS[preset][0]
+    return FAST_MODEL if fast and m == "htdemucs_ft.yaml" else m
+
+
 def separate(mix: np.ndarray, sr: int, preset: str | None = "4", model: str | None = None,
-             model_dir: Path | None = None, backend=None) -> StemResult:
+             model_dir: Path | None = None, backend=None, fast: bool = False) -> StemResult:
     """Separate a (samples, channels) song into stems aligned sample-exactly to it."""
     import librosa
 
+    explicit_model = model is not None
     if model is None:
-        if preset not in PRESETS:
-            raise ValueError(f"unknown stems preset {preset!r} (use 2, 4 or 6)")
-        model = PRESETS[preset][0]
+        model = preset_model(preset, fast)
     backend = backend or run_backend
     n, ch = mix.shape
     with tempfile.TemporaryDirectory() as td:
@@ -133,7 +142,7 @@ def separate(mix: np.ndarray, sr: int, preset: str | None = "4", model: str | No
     e_mix = float(np.mean(mix.astype(np.float64) ** 2)) + 1e-20
     res.residual_db = round(10 * np.log10(float(np.mean((mix - total).astype(np.float64) ** 2)) / e_mix + 1e-20), 1)
 
-    if model is None or preset in GROUPS:
+    if not explicit_model or preset in GROUPS:
         groups = GROUPS.get(preset)
         if groups and set(stems) != set(groups):
             res.stems = _group(stems, groups, res.model)

@@ -10,7 +10,7 @@ from .pipeline import add_stems
 
 def add_stems_to_result(out_dir: Path, preset: str = "4", model: str | None = None, model_dir: Path | None = None,
                         units: list[str] | None = None, fade_ms: float = 1.0, drop_partial: bool = False,
-                        log=print, backend=None) -> dict:
+                        log=print, backend=None, fast: bool = False) -> dict:
     out_dir = Path(out_dir)
     rpath = out_dir / "report.json"
     r = json.loads(rpath.read_text())
@@ -23,7 +23,7 @@ def add_stems_to_result(out_dir: Path, preset: str = "4", model: str | None = No
         units = [u for p in sorted(out_dir.iterdir()) if p.is_dir() and (u := slicer.unit_for_folder(p.name))]
     log(f"{out_dir.name}:")
     info = add_stems(out_dir, y, sr, float(r["target_bpm"]), bpb, song, units, preset, model, model_dir,
-                     fade_ms, drop_partial, log=log, backend=backend)
+                     fade_ms, drop_partial, log=log, backend=backend, fast=fast)
     r["stems"] = info
     rpath.write_text(json.dumps(r, indent=2))
     return info

@@ -187,3 +187,16 @@ def test_stems_cli_slice_none_means_no_stem_slices(tmp_path, monkeypatch):
     monkeypatch.setattr("aislice.cli._require_stems_extra", lambda: None)
     assert main(["stems", str(d), "--stems", "3", "--slice", "none"]) == 0
     assert seen["units"] == []
+
+
+def test_default_is_htdemucs_ft_and_fast_switch():
+    seen = []
+
+    def spy(wav, model, out_dir, model_dir=None):
+        seen.append(model)
+        return fake_backend()(wav, model, out_dir, model_dir)
+    mix, sr = _song(seconds=2.0)
+    st.separate(mix, sr, "3", backend=spy)
+    st.separate(mix, sr, "3", backend=spy, fast=True)
+    st.separate(mix, sr, "6", backend=spy, fast=True)          # no fine-tuned 6-stem: stays htdemucs_6s
+    assert seen == ["htdemucs_ft.yaml", "htdemucs.yaml", "htdemucs_6s.yaml"]

@@ -9,6 +9,7 @@
 - `aislice reslice` now moves stems together with the mix.
 - **beat_this downbeats (optional, `pip install "aislice[beats]"`).** The state-of-the-art beat_this model decides where bar 1 is. aislice's own beat grid still does the precise timing. Falls back to the harmony rule when beat_this is inconclusive or not installed. `--downbeats auto|beat_this|harmony`. The decision and votes are in `report.json`.
 - `--stems 3`: drums, bass and melody (everything else).
+- Stems default to `htdemucs_ft` (picked in a listening test against `htdemucs` and BS-Roformer-SW). `--stems-fast` uses `htdemucs`.
 - `aislice stems --slice none` no longer crashes.
 - CI: macOS job and a real-model job (Demucs + beat_this).
 

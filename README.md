@@ -79,7 +79,7 @@ aislice_output/song_206bpm/
     ├── drums/  …
 ```
 
-Separation runs after the tempo is locked, so every stem lines up sample-exactly with the mix. `aislice reslice` moves the stems along with the mix. Presets use Demucs v4 (MIT licensed; `htdemucs`, or `htdemucs_6s` for 6 stems). For other models, pass `--stem-model` with any [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) model, e.g. `htdemucs_ft.yaml` for best Demucs quality (about 4× slower) or a RoFormer model for cleaner vocals. Check each model's license before you use it. Models download once to `~/.cache/aislice/models`. On a CPU, expect roughly 1–2× the song's length per song; Apple Silicon and NVIDIA GPUs are much faster.
+Separation runs after the tempo is locked, so every stem lines up sample-exactly with the mix. `aislice reslice` moves the stems along with the mix. Presets use Demucs v4 (MIT licensed): `htdemucs_ft` by default, the fine-tuned and highest-quality Demucs, or `htdemucs_6s` for 6 stems. `--stems-fast` uses the single `htdemucs` model instead, about 4× faster with slightly lower quality. For other models, pass `--stem-model` with any [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) model, e.g. `BS-Roformer-SW.ckpt` (6 stems). Check each model's license before you use it. Models download once to `~/.cache/aislice/models`. On a slow 2-core CPU, a 3-minute song takes about 19 minutes with the default model and 4 with `--stems-fast`. Apple Silicon and NVIDIA GPUs are much faster.
 
 ### Fixing a wrong bar start
 

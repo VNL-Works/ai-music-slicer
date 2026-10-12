@@ -103,6 +103,8 @@ def _add_stem_args(ap):
                          '(needs: pip install "aislice[stems]")')
     ap.add_argument("--stem-model", help="any audio-separator model filename (overrides the --stems preset), "
                                          "e.g. model_bs_roformer_ep_317_sdr_12.9755.ckpt")
+    ap.add_argument("--stems-fast", action="store_true",
+                    help="use htdemucs instead of the default htdemucs_ft: ~4x faster, slightly lower quality")
     ap.add_argument("--model-dir", help="folder to cache separation models in")
 
 
@@ -123,7 +125,7 @@ def stems_main(argv) -> int:
         try:
             add_stems_to_result(Path(f), args.stems if args.stems not in (None, "none") else "4", args.stem_model,
                                 Path(args.model_dir) if args.model_dir else None, units, args.fade_ms,
-                                args.drop_partial)
+                                args.drop_partial, fast=args.stems_fast)
         except Exception as e:
             failed += 1
             print(f"{f}: FAILED: {e}", file=sys.stderr)
@@ -193,7 +195,7 @@ def main(argv=None) -> int:
     opt = Options(bpm=bpm, slice_unit=slice_unit, beats_per_bar=int(args.meter.split("/")[0]),
                   out_root=Path(args.out), fmt=args.format, bit_depth=args.bit_depth,
                   fade_ms=args.fade_ms, drop_partial=args.drop_partial, plot=not args.no_plot,
-                  stems=stems, stem_model=args.stem_model, downbeats=args.downbeats,
+                  stems=stems, stem_model=args.stem_model, downbeats=args.downbeats, stems_fast=args.stems_fast,
                   model_dir=Path(args.model_dir) if args.model_dir else None)
     failed = 0
     for i, f in enumerate(files, 1):

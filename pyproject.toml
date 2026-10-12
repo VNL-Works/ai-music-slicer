@@ -9,7 +9,7 @@ description = "Lock AI-generated music to a fixed BPM grid and slice it by bar/b
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "VNL Works" }]
-keywords = ["audio", "bpm", "tempo", "beat-tracking", "time-stretch", "slicing", "ai-music"]
+keywords = ["audio", "bpm", "tempo", "beat-tracking", "time-stretch", "slicing", "ai-music", "stem-separation", "demucs"]
 classifiers = [
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
@@ -27,6 +27,8 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
+# audioread: imported by audio-separator but not declared by it (as of 0.47)
+stems = ["audio-separator[cpu]>=0.40", "audioread>=3"]
 
 [project.urls]
 Homepage = "https://github.com/VNL-Works/ai-music-slicer"

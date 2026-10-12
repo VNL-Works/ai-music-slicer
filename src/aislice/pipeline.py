@@ -26,6 +26,9 @@ class Options:
     fade_ms: float = 1.0
     drop_partial: bool = False
     plot: bool = True
+    stems: str | None = None         # None, "2", "4" or "6" (needs the [stems] extra)
+    stem_model: str | None = None    # any audio-separator model filename; overrides the preset
+    model_dir: Path | None = None    # where separation models are cached
 
 
 def _safe(name: str) -> str:
@@ -87,18 +90,19 @@ def process(path: Path, opt: Options, log=print) -> Path:
     slice_info = None
     if opt.slice_unit != "none":
         upb = slicer.unit_beats(opt.slice_unit, opt.beats_per_bar)
-        pts = slicer.slice_points(len(y_out), sr, opt.bpm, upb, opt.drop_partial)
-        sdir = out_dir / "slices"
-        sdir.mkdir(exist_ok=True)
-        label = opt.slice_unit.replace("/", "-")
-        width = max(3, len(str(len(pts))))
-        for i, (s, e) in enumerate(pts, 1):
-            seg = slicer.apply_fades(y_out[s:e], sr, opt.fade_ms)
-            io.write(sdir / f"{stem}_{label}_{i:0{width}d}.{opt.fmt}", seg, sr, opt.fmt, opt.bit_depth)
-        first_db = wp.first_downbeat_out_s
-        slice_info = {"unit": opt.slice_unit, "count": len(pts),
+        n_sl = slicer.write_slices(y_out, sr, opt.bpm, opt.slice_unit, opt.beats_per_bar, out_dir, stem,
+                                   opt.fade_ms, opt.drop_partial, opt.fmt, opt.bit_depth)
+        slice_info = {"unit": opt.slice_unit, "count": n_sl,
                       "samples_per_slice": round(upb * 60 / opt.bpm * sr, 3),
-                      "first_downbeat_slice": int(round(first_db / (upb * 60 / opt.bpm))) + 1}
+                      "first_downbeat_slice": int(round(wp.first_downbeat_out_s / (upb * 60 / opt.bpm))) + 1}
+
+    # 4b. stems (optional): separate the grid-locked song, slice each stem on the same grid
+    stems_info = None
+    if opt.stems or opt.stem_model:
+        stems_info = add_stems(out_dir, y_out, sr, opt.bpm, opt.beats_per_bar, stem,
+                               [opt.slice_unit] if opt.slice_unit != "none" else [],
+                               opt.stems or "4", opt.stem_model, opt.model_dir, opt.fade_ms,
+                               opt.drop_partial, opt.bit_depth, log)
 
     # 5. verify
     v = verify(y_out, sr, opt.bpm)
@@ -125,6 +129,7 @@ def process(path: Path, opt: Options, log=print) -> Path:
         "notes": tm.notes,
         "verification": {k: val for k, val in v.items() if not k.startswith("_")},
         "slices": slice_info,
+        "stems": stems_info,
         "duration": {"source_s": round(src_dur, 3), "output_s": round(len(y_out) / sr, 3)},
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2))
@@ -144,3 +149,22 @@ def _bpm_windows(tm):
             p = np.polyfit(idx, b[idx], 1)
             out.append({"from_s": int(s), "bpm": round(60 / p[0], 2)})
     return out
+
+
+def add_stems(out_dir: Path, y: np.ndarray, sr: int, bpm: float, beats_per_bar: int, song_stem: str,
+              units: list[str], preset: str = "4", model: str | None = None, model_dir: Path | None = None,
+              fade_ms: float = 1.0, drop_partial: bool = False, bit_depth: str = "24", log=print,
+              backend=None) -> dict:
+    """Separate `y` (already on the grid) into stems/, then slice each stem for every unit."""
+    from . import stems as st
+
+    log(f"  separating stems ({model or st.PRESETS[preset][0]}) ...")
+    res = st.separate(y, sr, preset=preset, model=model, model_dir=model_dir, backend=backend)
+    st.write_stems(res, out_dir, sr, bit_depth)
+    counts = {u: slicer.write_stem_slices(res.stems, sr, bpm, u, beats_per_bar, out_dir, song_stem,
+                                          fade_ms=fade_ms, drop_partial=drop_partial, bit_depth=bit_depth)
+              for u in units}
+    log(f"  stems: {', '.join(res.stems)} (unexplained residual {res.residual_db} dB)")
+    return {"model": res.model, "preset": None if model else preset, "names": list(res.stems),
+            "alignment_shift_samples": res.lag_samples, "residual_db": res.residual_db,
+            "sliced_units": units, "notes": res.notes}

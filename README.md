@@ -46,11 +46,32 @@ Output (one folder per input):
 aislice_output/song_206bpm/
 ├── song_206bpm.wav     # whole song locked to the grid (24-bit, source sample rate)
 ├── slices/             # song_bar_001.wav, song_bar_002.wav, ...
+├── stems/              # optional: vocals.wav, drums.wav, … (with --stems)
 ├── report.json         # detected tempo map, corrections, verification
 └── tempo.png           # before/after plot
 ```
 
 Slice units: `1/16`, `1/8`, `beat`, `bar`, `2bar`, `4bar`, `8bar`, any `Nbar` / `Nbeat` (e.g. `16bar`, `3beat`), or `none`.
+
+### Stems (optional)
+
+Split the locked song into stems that share its exact grid, and slice every stem with the same cut points as the mix:
+
+```bash
+pip install "aislice[stems]"                       # adds PyTorch + audio-separator (large)
+aislice song.mp3 --bpm 206 --slice 8bar --stems 4  # 2 = vocals/instrumental, 4 = +drums/bass/other, 6 = +guitar/piano
+aislice stems "aislice_output/song_206bpm" --stems 4   # add stems to an existing result
+```
+
+```
+aislice_output/song_206bpm/
+├── stems/          vocals.wav  drums.wav  bass.wav  other.wav
+└── slices_8bar/    song_8bar_001.wav …        (mix)
+    ├── vocals/     song_vocals_8bar_001.wav …
+    ├── drums/  …
+```
+
+Separation runs after the tempo is locked, so every stem lines up sample-exactly with the mix. `aislice reslice` moves the stems along with the mix. Presets use Demucs v4 (MIT licensed; `htdemucs`, or `htdemucs_6s` for 6 stems). For other models, pass `--stem-model` with any [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) model, e.g. `htdemucs_ft.yaml` for best Demucs quality (about 4× slower) or a RoFormer model for cleaner vocals. Check each model's license before you use it. Models download once to `~/.cache/aislice/models`. On a CPU, expect roughly 1–2× the song's length per song; Apple Silicon and NVIDIA GPUs are much faster.
 
 ### Fixing a wrong bar start
 

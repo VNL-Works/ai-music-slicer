@@ -24,3 +24,27 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Run tests
         run: pytest -q
+
+  stems:
+    # Real separation with Demucs (downloads PyTorch CPU + ~80 MB model, cached).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install system tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg rubberband-cli
+      - name: Install package with stems extra (CPU PyTorch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,stems]"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/aislice/models
+          key: aislice-models-htdemucs-v1
+      - name: Real stem separation test
+        env:
+          AISLICE_REAL_STEMS: "1"
+        run: pytest -q tests/test_stems.py

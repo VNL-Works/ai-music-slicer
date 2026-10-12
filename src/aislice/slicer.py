@@ -69,11 +69,14 @@ def unit_for_folder(name: str) -> str | None:
 
 
 def write_slices(y, sr, bpm, unit, beats_per_bar, out_dir, stem, fade_ms=1.0, drop_partial=False,
-                 fmt="wav", bit_depth="24"):
-    """Cut `y` (grid starts at sample 0) into `unit` slices in out_dir/<folder_for(unit)>/. Returns count."""
+                 fmt="wav", bit_depth="24", dest=None):
+    """Cut `y` (grid starts at sample 0) into `unit` slices in out_dir/<folder_for(unit)>/ (or `dest`).
+
+    Returns the number of slices. Stem slices go in a subfolder per stem: dest=<unit folder>/<stem>.
+    """
     from . import io
     pts = slice_points(len(y), sr, bpm, unit_beats(unit, beats_per_bar), drop_partial)
-    d = out_dir / folder_for(unit)
+    d = dest if dest is not None else out_dir / folder_for(unit)
     d.mkdir(parents=True, exist_ok=True)
     for old in d.glob("*." + fmt):
         old.unlink()  # stale slices from a previous run would otherwise mix in
@@ -82,3 +85,11 @@ def write_slices(y, sr, bpm, unit, beats_per_bar, out_dir, stem, fade_ms=1.0, dr
     for i, (s, e) in enumerate(pts, 1):
         io.write(d / f"{stem}_{label}_{i:0{width}d}.{fmt}", apply_fades(y[s:e], sr, fade_ms), sr, fmt, bit_depth)
     return len(pts)
+
+
+def write_stem_slices(stems, sr, bpm, unit, beats_per_bar, out_dir, song_stem, **kw) -> dict[str, int]:
+    """Slice every stem with the same cut points as the mix, into <unit folder>/<stem name>/."""
+    base = out_dir / folder_for(unit)
+    return {name: write_slices(y, sr, bpm, unit, beats_per_bar, out_dir, f"{song_stem}_{name}",
+                               dest=base / name, **kw)
+            for name, y in stems.items()}

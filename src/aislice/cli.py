@@ -75,12 +75,70 @@ def reslice_main(argv) -> int:
     return 0
 
 
+STEM_CHOICES = ["none", "2", "4", "6"]
+
+
+def _ask_stems() -> str | None:
+    print("? Separate stems? (needs the [stems] extra; slow on CPU)")
+    print("    1) none   2) 2 stems: vocals + instrumental   3) 4 stems: vocals, drums, bass, other   "
+          "4) 6 stems: + guitar, piano")
+    while True:
+        ans = _ask("Choose 1-4", "1")
+        m = {"1": None, "2": "2", "3": "4", "4": "6", "none": None}
+        if ans in m:
+            return m[ans]
+        print("  Not a valid choice.")
+
+
+def _require_stems_extra() -> None:
+    import importlib.util
+    if importlib.util.find_spec("audio_separator") is None:
+        print('Stem separation needs the optional extra:  pip install "aislice[stems]"', file=sys.stderr)
+        raise SystemExit(2)
+
+
+def _add_stem_args(ap):
+    ap.add_argument("--stems", choices=STEM_CHOICES,
+                    help="separate stems after locking the tempo: 2 (vocals/instrumental), 4 or 6 "
+                         '(needs: pip install "aislice[stems]")')
+    ap.add_argument("--stem-model", help="any audio-separator model filename (overrides the --stems preset), "
+                                         "e.g. model_bs_roformer_ep_317_sdr_12.9755.ckpt")
+    ap.add_argument("--model-dir", help="folder to cache separation models in")
+
+
+def stems_main(argv) -> int:
+    ap = argparse.ArgumentParser(prog="aislice stems",
+                                 description="Add stems to existing aislice results (no re-processing of the tempo).")
+    ap.add_argument("folders", nargs="+", help="output folder(s) made by aislice, e.g. aislice_output/song_206bpm")
+    _add_stem_args(ap)
+    ap.add_argument("--slice", help="comma-separated units to slice stems by (default: the slice folders that exist)")
+    ap.add_argument("--fade-ms", type=float, default=1.0)
+    ap.add_argument("--drop-partial", action="store_true")
+    args = ap.parse_args(argv)
+    units = [_slice_arg(u.strip()) for u in args.slice.split(",")] if args.slice else None
+    _require_stems_extra()
+    from .stems_cmd import add_stems_to_result
+    failed = 0
+    for f in args.folders:
+        try:
+            add_stems_to_result(Path(f), args.stems if args.stems not in (None, "none") else "4", args.stem_model,
+                                Path(args.model_dir) if args.model_dir else None, units, args.fade_ms,
+                                args.drop_partial)
+        except Exception as e:
+            failed += 1
+            print(f"{f}: FAILED: {e}", file=sys.stderr)
+    return 1 if failed else 0
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv and argv[0] == "reslice":
         return reslice_main(argv[1:])
+    if argv and argv[0] == "stems":
+        return stems_main(argv[1:])
     ap = argparse.ArgumentParser(prog="aislice", description=__doc__,
-                                 epilog="Fix a wrong bar start afterwards: aislice reslice <output folder> --shift N")
+                                 epilog="Fix a wrong bar start afterwards: aislice reslice <output folder> --shift N. "
+                                        "Add stems to existing results: aislice stems <output folder> --stems 4")
     ap.add_argument("inputs", nargs="+", help="audio files and/or folders")
     ap.add_argument("--bpm", type=float, help="target BPM")
     ap.add_argument("--slice", type=_slice_arg, help="slice unit: bar, 2bar, 4bar, 8bar (any Nbar), beat (any Nbeat), 1/8, 1/16, none")
@@ -91,6 +149,7 @@ def main(argv=None) -> int:
     ap.add_argument("--fade-ms", type=float, default=1.0)
     ap.add_argument("--drop-partial", action="store_true")
     ap.add_argument("--no-plot", action="store_true")
+    _add_stem_args(ap)
     ap.add_argument("-y", "--yes", action="store_true", help="accept defaults, no prompts")
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args(argv)
@@ -116,10 +175,18 @@ def main(argv=None) -> int:
         default = round(sorted(est)[len(est) // 2])
         bpm = default if args.yes else _ask_bpm(default)
     slice_unit = args.slice or ("bar" if args.yes else _ask_slice())
+    if args.stems is not None:
+        stems = None if args.stems == "none" else args.stems
+    else:
+        stems = None if (args.yes or args.stem_model) else _ask_stems()
+    if stems or args.stem_model:
+        _require_stems_extra()
 
     opt = Options(bpm=bpm, slice_unit=slice_unit, beats_per_bar=int(args.meter.split("/")[0]),
                   out_root=Path(args.out), fmt=args.format, bit_depth=args.bit_depth,
-                  fade_ms=args.fade_ms, drop_partial=args.drop_partial, plot=not args.no_plot)
+                  fade_ms=args.fade_ms, drop_partial=args.drop_partial, plot=not args.no_plot,
+                  stems=stems, stem_model=args.stem_model,
+                  model_dir=Path(args.model_dir) if args.model_dir else None)
     failed = 0
     for i, f in enumerate(files, 1):
         print(f"[{i}/{len(files)}] {f.name}")

@@ -53,6 +53,14 @@ aislice_output/song_206bpm/
 
 Slice units: `1/16`, `1/8`, `beat`, `bar`, `2bar`, `4bar`, `8bar`, any `Nbar` / `Nbeat` (e.g. `16bar`, `3beat`), or `none`.
 
+### Better bar detection (optional, recommended)
+
+```bash
+pip install "aislice[beats]"     # adds beat_this (MIT, CPJKU) + PyTorch
+```
+
+With the extra installed, `aislice` asks [beat_this](https://github.com/CPJKU/beat_this) which beat is bar 1. Its own precise beat grid still does the timing. If beat_this is unsure, it falls back to the built-in harmony rule. On the test tracks, beat_this agreed with the correct bar start on all four (99–100% of its downbeats), including one the built-in rule got wrong. Use `--downbeats harmony` to skip it, or `--downbeats beat_this` to require it. `pip install "aislice[all]"` installs both extras.
+
 ### Stems (optional)
 
 Split the locked song into stems that share its exact grid, and slice every stem with the same cut points as the mix:
@@ -99,7 +107,7 @@ pip install -e ".[dev]"
 pytest
 ```
 
-The tests build synthetic songs with a known, drifting tempo and chords that change on each bar. That gives exact ground truth for beat timing, downbeat detection, slicing and the full end-to-end run. The end-to-end test needs `rubberband` and `ffmpeg` installed and is skipped otherwise. CI runs everything on Python 3.10–3.13. See [AGENTS.md](AGENTS.md) for architecture and invariants, and [CHANGELOG.md](CHANGELOG.md) for releases.
+The tests build synthetic songs with a known, drifting tempo and chords that change on each bar. That gives exact ground truth for beat timing, downbeat detection, slicing and the full end-to-end run. The end-to-end test needs `rubberband` and `ffmpeg` installed and is skipped otherwise. CI runs everything on Python 3.10–3.13 and on macOS, plus a job that runs the real Demucs and beat_this models. See [AGENTS.md](AGENTS.md) for architecture and invariants, and [CHANGELOG.md](CHANGELOG.md) for releases.
 
 ## License
 

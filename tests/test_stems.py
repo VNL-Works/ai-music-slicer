@@ -174,3 +174,16 @@ def test_rerun_with_other_split_removes_old_stem_folders(tmp_path):
     add_stems_to_result(d, "3", units=["bar"], backend=fake_backend(), log=lambda *a: None)
     assert sorted(p.name for p in (d / "slices").iterdir() if p.is_dir()) == ["bass", "drums", "melody"]
     assert sorted(p.stem for p in (d / "stems").glob("*.wav")) == ["bass", "drums", "melody"]
+
+
+def test_stems_cli_slice_none_means_no_stem_slices(tmp_path, monkeypatch):
+    import aislice.stems_cmd as sc
+    from aislice.cli import main
+    d, mix = _result(tmp_path)
+    seen = {}
+    real = sc.add_stems_to_result
+    monkeypatch.setattr(sc, "add_stems_to_result",
+                        lambda *a, **k: seen.setdefault("units", a[4]) or real(*a, backend=fake_backend(), **k))
+    monkeypatch.setattr("aislice.cli._require_stems_extra", lambda: None)
+    assert main(["stems", str(d), "--stems", "3", "--slice", "none"]) == 0
+    assert seen["units"] == []

@@ -7,6 +7,10 @@
 - `--stem-model` accepts any audio-separator model (Demucs, RoFormer, MDX, VR). Models are cached in `~/.cache/aislice/models`.
 - Stems are checked against the mix: any model delay is corrected automatically, and the leftover difference is reported in `report.json`.
 - `aislice reslice` now moves stems together with the mix.
+- **beat_this downbeats (optional, `pip install "aislice[beats]"`).** The state-of-the-art beat_this model decides where bar 1 is. aislice's own beat grid still does the precise timing. Falls back to the harmony rule when beat_this is inconclusive or not installed. `--downbeats auto|beat_this|harmony`. The decision and votes are in `report.json`.
+- `--stems 3`: drums, bass and melody (everything else).
+- `aislice stems --slice none` no longer crashes.
+- CI: macOS job and a real-model job (Demucs + beat_this).
 
 ## 0.1.0 (2026-10-07)
 

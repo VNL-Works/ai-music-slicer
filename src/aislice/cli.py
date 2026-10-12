@@ -115,7 +115,7 @@ def stems_main(argv) -> int:
     ap.add_argument("--fade-ms", type=float, default=1.0)
     ap.add_argument("--drop-partial", action="store_true")
     args = ap.parse_args(argv)
-    units = [_slice_arg(u.strip()) for u in args.slice.split(",")] if args.slice else None
+    units = [u for u in (_slice_arg(x.strip()) for x in args.slice.split(",")) if u != "none"] if args.slice else None
     _require_stems_extra()
     from .stems_cmd import add_stems_to_result
     failed = 0
@@ -150,6 +150,9 @@ def main(argv=None) -> int:
     ap.add_argument("--drop-partial", action="store_true")
     ap.add_argument("--no-plot", action="store_true")
     _add_stem_args(ap)
+    ap.add_argument("--downbeats", choices=["auto", "beat_this", "harmony"], default="auto",
+                    help="how to find bar 1: beat_this model (pip install \"aislice[beats]\"), the built-in "
+                         "harmony heuristic, or auto (beat_this when installed)")
     ap.add_argument("-y", "--yes", action="store_true", help="accept defaults, no prompts")
     ap.add_argument("--version", action="version", version=__version__)
     args = ap.parse_args(argv)
@@ -181,11 +184,16 @@ def main(argv=None) -> int:
         stems = None if (args.yes or args.stem_model) else _ask_stems()
     if stems or args.stem_model:
         _require_stems_extra()
+    if args.downbeats == "beat_this":
+        from .downbeats import INSTALL_HINT, available
+        if not available():
+            print(INSTALL_HINT, file=sys.stderr)
+            raise SystemExit(2)
 
     opt = Options(bpm=bpm, slice_unit=slice_unit, beats_per_bar=int(args.meter.split("/")[0]),
                   out_root=Path(args.out), fmt=args.format, bit_depth=args.bit_depth,
                   fade_ms=args.fade_ms, drop_partial=args.drop_partial, plot=not args.no_plot,
-                  stems=stems, stem_model=args.stem_model,
+                  stems=stems, stem_model=args.stem_model, downbeats=args.downbeats,
                   model_dir=Path(args.model_dir) if args.model_dir else None)
     failed = 0
     for i, f in enumerate(files, 1):

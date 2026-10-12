@@ -29,6 +29,8 @@ dependencies = [
 dev = ["pytest>=7"]
 # audioread: imported by audio-separator but not declared by it (as of 0.47)
 stems = ["audio-separator[cpu]>=0.40", "audioread>=3"]
+beats = ["beat-this>=1.1"]
+all = ["aislice[stems,beats]"]
 
 [project.urls]
 Homepage = "https://github.com/VNL-Works/ai-music-slicer"

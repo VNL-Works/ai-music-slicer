@@ -29,6 +29,7 @@ class Options:
     stems: str | None = None         # None, "2", "4" or "6" (needs the [stems] extra)
     stem_model: str | None = None    # any audio-separator model filename; overrides the preset
     model_dir: Path | None = None    # where separation models are cached
+    downbeats: str = "auto"          # auto (beat_this if installed), beat_this, harmony
 
 
 def _safe(name: str) -> str:
@@ -71,6 +72,7 @@ def process(path: Path, opt: Options, log=print) -> Path:
 
         # 2. tempo map
         tm = build_tempo_map(a, beats_per_bar=opt.beats_per_bar)
+        db_info = choose_downbeat(tm, mono, 22050, opt.downbeats, log)
         if not tm.downbeat_confident:
             log("  WARNING: not sure where bar 1 starts. Listen to slice 1; if it's off, run:")
             log(f"    aislice reslice \"{opt.out_root}/{stem}_{bpm_tag}bpm\" --shift 1|2|3")
@@ -122,6 +124,7 @@ def process(path: Path, opt: Options, log=print) -> Path:
         "stretch": {"min_ratio": round(float(wp.ratios.min()), 4), "max_ratio": round(float(wp.ratios.max()), 4)},
         "grid": {"beats": int(len(tm.beats)), "first_downbeat_source_s": round(float(tm.beats[tm.downbeat_index]), 3),
                  "downbeat_margin": round(tm.downbeat_margin, 3),
+                 "downbeat_method": db_info,
                  "downbeat_confident": tm.downbeat_confident,
                  "first_downbeat_output_s": round(wp.first_downbeat_out_s, 4),
                  "silence_padded_s": round(wp.pad_s, 4)},
@@ -168,3 +171,37 @@ def add_stems(out_dir: Path, y: np.ndarray, sr: int, bpm: float, beats_per_bar: 
     return {"model": res.model, "preset": None if model else preset, "names": list(res.stems),
             "alignment_shift_samples": res.lag_samples, "residual_db": res.residual_db,
             "sliced_units": units, "notes": res.notes}
+
+
+def choose_downbeat(tm, mono: np.ndarray, sr: int, mode: str = "auto", log=print) -> dict:
+    """Decide which grid beat is bar 1: beat_this votes when available, else the harmony heuristic.
+
+    Mutates tm.downbeat_index / tm.downbeat_confident. Returns a summary for report.json.
+    """
+    from . import downbeats as db
+
+    harmony_phase = tm.downbeat_index
+    info = {"method": "harmony", "harmony_phase": harmony_phase}
+    if mode == "harmony" or (mode == "auto" and not db.available()):
+        return info
+    try:
+        vote = db.vote_phase(tm.beats, db.detect_downbeats(mono, sr), tm.beats_per_bar)
+    except Exception as e:  # never let the optional model break a run
+        if mode == "beat_this":
+            raise
+        log(f"  beat_this unavailable ({e}); using harmony downbeats")
+        return info
+    if vote is None:
+        return info | {"beat_this": "no usable downbeats"}
+    info |= {"beat_this_phase": vote.phase, "beat_this_share": round(vote.share, 3), "beat_this_votes": vote.votes}
+    if vote.share >= db.MIN_SHARE:
+        tm.downbeat_index = vote.phase
+        tm.downbeat_confident = True
+        info["method"] = "beat_this"
+        if vote.phase != harmony_phase:
+            tm.notes.append(f"beat_this moved bar 1 by {(vote.phase - harmony_phase) % tm.beats_per_bar} beat(s) "
+                            f"vs. the harmony heuristic ({vote.share:.0%} of its downbeats agree)")
+            log(f"  bar 1 set by beat_this ({vote.share:.0%} agreement; harmony guess differed)")
+    else:
+        tm.notes.append(f"beat_this downbeats were inconclusive ({vote.share:.0%}); kept harmony guess")
+    return info

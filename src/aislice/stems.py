@@ -102,8 +102,11 @@ def preset_model(preset: str, fast: bool = False) -> str:
     return FAST_MODEL if fast and m == "htdemucs_ft.yaml" else m
 
 
+REMAINDER_STEMS = ("melody", "other", "instrumental")  # where --stems-exact puts the leftover
+
+
 def separate(mix: np.ndarray, sr: int, preset: str | None = "4", model: str | None = None,
-             model_dir: Path | None = None, backend=None, fast: bool = False) -> StemResult:
+             model_dir: Path | None = None, backend=None, fast: bool = False, exact: bool = False) -> StemResult:
     """Separate a (samples, channels) song into stems aligned sample-exactly to it."""
     import librosa
 
@@ -146,6 +149,12 @@ def separate(mix: np.ndarray, sr: int, preset: str | None = "4", model: str | No
         groups = GROUPS.get(preset)
         if groups and set(stems) != set(groups):
             res.stems = _group(stems, groups, res.model)
+    if exact:
+        # Some models (e.g. htdemucs_ft: one specialist model per source) don't sum back to the mix.
+        # Put the leftover into the catch-all stem so the stems recombine to the mix exactly.
+        target = next((n for n in REMAINDER_STEMS if n in res.stems), list(res.stems)[-1])
+        res.stems[target] = (res.stems[target] + (mix - sum(res.stems.values()))).astype(np.float32)
+        res.notes.append(f"--stems-exact: leftover ({res.residual_db} dB) added to '{target}'")
     return res
 
 

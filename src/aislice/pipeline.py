@@ -31,6 +31,7 @@ class Options:
     model_dir: Path | None = None    # where separation models are cached
     downbeats: str = "auto"          # auto (beat_this if installed), beat_this, harmony
     stems_fast: bool = False         # htdemucs instead of htdemucs_ft (~4x faster)
+    stems_exact: bool = False        # put the separation leftover into melody/other so stems sum to the mix
 
 
 def _safe(name: str) -> str:
@@ -105,7 +106,8 @@ def process(path: Path, opt: Options, log=print) -> Path:
         stems_info = add_stems(out_dir, y_out, sr, opt.bpm, opt.beats_per_bar, stem,
                                [opt.slice_unit] if opt.slice_unit != "none" else [],
                                opt.stems or "4", opt.stem_model, opt.model_dir, opt.fade_ms,
-                               opt.drop_partial, opt.bit_depth, log, fast=opt.stems_fast)
+                               opt.drop_partial, opt.bit_depth, log, fast=opt.stems_fast,
+                               exact=opt.stems_exact)
 
     # 5. verify
     v = verify(y_out, sr, opt.bpm)
@@ -158,19 +160,21 @@ def _bpm_windows(tm):
 def add_stems(out_dir: Path, y: np.ndarray, sr: int, bpm: float, beats_per_bar: int, song_stem: str,
               units: list[str], preset: str = "4", model: str | None = None, model_dir: Path | None = None,
               fade_ms: float = 1.0, drop_partial: bool = False, bit_depth: str = "24", log=print,
-              backend=None, fast: bool = False) -> dict:
+              backend=None, fast: bool = False, exact: bool = False) -> dict:
     """Separate `y` (already on the grid) into stems/, then slice each stem for every unit."""
     from . import stems as st
 
     log(f"  separating stems ({model or st.preset_model(preset, fast)}) ...")
-    res = st.separate(y, sr, preset=preset, model=model, model_dir=model_dir, backend=backend, fast=fast)
+    res = st.separate(y, sr, preset=preset, model=model, model_dir=model_dir, backend=backend, fast=fast,
+                      exact=exact)
     st.write_stems(res, out_dir, sr, bit_depth)
     counts = {u: slicer.write_stem_slices(res.stems, sr, bpm, u, beats_per_bar, out_dir, song_stem,
                                           fade_ms=fade_ms, drop_partial=drop_partial, bit_depth=bit_depth)
               for u in units}
-    log(f"  stems: {', '.join(res.stems)} (unexplained residual {res.residual_db} dB)")
+    log(f"  stems: {', '.join(res.stems)} (stems differ from the mix by {res.residual_db} dB"
+        + (", leftover added back)" if exact else ")"))
     return {"model": res.model, "preset": None if model else preset, "names": list(res.stems),
-            "alignment_shift_samples": res.lag_samples, "residual_db": res.residual_db,
+            "alignment_shift_samples": res.lag_samples, "residual_db": res.residual_db, "exact": exact,
             "sliced_units": units, "notes": res.notes}
 
 

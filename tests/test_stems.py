@@ -155,7 +155,10 @@ def test_real_demucs_separation():
     assert len(res.stems) >= 2
     for s in res.stems.values():
         assert s.shape == mix.shape
-    assert res.residual_db < -10
+        assert np.sqrt(np.mean(s ** 2)) > 0                  # no empty/broken stem
+    # htdemucs_ft uses one specialist model per source, so its stems don't sum exactly to the mix:
+    # ~-19 dB on real music, ~-10 dB on these synthetic clicks. A broken separation is ~0 dB.
+    assert res.residual_db < -6
     assert abs(res.lag_samples) < sr * 0.005
 
 
@@ -200,3 +203,20 @@ def test_default_is_htdemucs_ft_and_fast_switch():
     st.separate(mix, sr, "3", backend=spy, fast=True)
     st.separate(mix, sr, "6", backend=spy, fast=True)          # no fine-tuned 6-stem: stays htdemucs_6s
     assert seen == ["htdemucs_ft.yaml", "htdemucs.yaml", "htdemucs_6s.yaml"]
+
+
+def test_stems_exact_recombines_to_the_mix():
+    def lossy(wav, model, out_dir, model_dir=None):
+        files = fake_backend()(wav, model, out_dir, model_dir)
+        for f in files.values():                      # model that "loses" 20% of every stem
+            y, r = sf.read(f)
+            sf.write(f, (0.8 * y).astype(np.float32), r, subtype="FLOAT")
+        return files
+    mix, sr = _song()
+    plain = st.separate(mix, sr, "3", backend=lossy)
+    assert plain.residual_db > -20
+    exact = st.separate(mix, sr, "3", backend=lossy, exact=True)
+    total = sum(exact.stems.values())
+    assert np.allclose(total, mix, atol=1e-5)
+    assert np.allclose(exact.stems["drums"], plain.stems["drums"])        # only melody gets the leftover
+    assert any("leftover" in n for n in exact.notes)

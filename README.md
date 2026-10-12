@@ -59,7 +59,7 @@ Split the locked song into stems that share its exact grid, and slice every stem
 
 ```bash
 pip install "aislice[stems]"                       # adds PyTorch + audio-separator (large)
-aislice song.mp3 --bpm 206 --slice 8bar --stems 4  # 2 = vocals/instrumental, 4 = +drums/bass/other, 6 = +guitar/piano
+aislice song.mp3 --bpm 206 --slice 8bar --stems 3  # 2 = vocals/instrumental, 3 = drums/bass/melody, 4 = vocals/drums/bass/other, 6 = +guitar/piano
 aislice stems "aislice_output/song_206bpm" --stems 4   # add stems to an existing result
 ```
 

@@ -157,3 +157,20 @@ def test_real_demucs_separation():
         assert s.shape == mix.shape
     assert res.residual_db < -10
     assert abs(res.lag_samples) < sr * 0.005
+
+
+def test_three_stem_preset_drums_bass_melody():
+    mix, sr = _song()
+    res = st.separate(mix, sr, "3", backend=fake_backend())
+    assert list(res.stems) == ["drums", "bass", "melody"]
+    total = sum(res.stems.values())
+    assert np.allclose(total[200:-200], mix[200:-200], atol=1e-4)
+
+
+def test_rerun_with_other_split_removes_old_stem_folders(tmp_path):
+    d, mix = _result(tmp_path)
+    add_stems_to_result(d, "2", units=["bar"], backend=fake_backend(), log=lambda *a: None)
+    assert (d / "slices" / "vocals").is_dir() and (d / "slices" / "instrumental").is_dir()
+    add_stems_to_result(d, "3", units=["bar"], backend=fake_backend(), log=lambda *a: None)
+    assert sorted(p.name for p in (d / "slices").iterdir() if p.is_dir()) == ["bass", "drums", "melody"]
+    assert sorted(p.stem for p in (d / "stems").glob("*.wav")) == ["bass", "drums", "melody"]

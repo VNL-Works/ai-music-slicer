@@ -75,16 +75,16 @@ def reslice_main(argv) -> int:
     return 0
 
 
-STEM_CHOICES = ["none", "2", "4", "6"]
+STEM_CHOICES = ["none", "2", "3", "4", "6"]
 
 
 def _ask_stems() -> str | None:
     print("? Separate stems? (needs the [stems] extra; slow on CPU)")
-    print("    1) none   2) 2 stems: vocals + instrumental   3) 4 stems: vocals, drums, bass, other   "
-          "4) 6 stems: + guitar, piano")
+    print("    1) none\n    2) 2 stems: vocals + instrumental\n    3) 3 stems: drums, bass, melody\n"
+          "    4) 4 stems: vocals, drums, bass, other\n    5) 6 stems: vocals, drums, bass, guitar, piano, other")
     while True:
-        ans = _ask("Choose 1-4", "1")
-        m = {"1": None, "2": "2", "3": "4", "4": "6", "none": None}
+        ans = _ask("Choose 1-5", "1")
+        m = {"1": None, "2": "2", "3": "3", "4": "4", "5": "6", "none": None}
         if ans in m:
             return m[ans]
         print("  Not a valid choice.")
@@ -99,7 +99,7 @@ def _require_stems_extra() -> None:
 
 def _add_stem_args(ap):
     ap.add_argument("--stems", choices=STEM_CHOICES,
-                    help="separate stems after locking the tempo: 2 (vocals/instrumental), 4 or 6 "
+                    help="separate stems after locking the tempo: 2 (vocals/instrumental), 3 (drums/bass/melody), 4 or 6 "
                          '(needs: pip install "aislice[stems]")')
     ap.add_argument("--stem-model", help="any audio-separator model filename (overrides the --stems preset), "
                                          "e.g. model_bs_roformer_ep_317_sdr_12.9755.ckpt")

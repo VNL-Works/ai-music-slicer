@@ -2,7 +2,7 @@
 
 ## 0.2.0 (unreleased)
 
-- **Stem separation (optional).** `--stems 2|4|6` splits the grid-locked song into stems (vocals/instrumental, or vocals/drums/bass/other, plus guitar/piano) and slices each stem with the same cut points as the mix. Install with `pip install "aislice[stems]"`.
+- **Stem separation (optional).** `--stems 2|3|4|6` splits the grid-locked song into stems (vocals/instrumental; drums/bass/melody; vocals/drums/bass/other; plus guitar/piano) and slices each stem with the same cut points as the mix. Install with `pip install "aislice[stems]"`.
 - `aislice stems <folder>` adds stems to an existing result without re-processing the tempo.
 - `--stem-model` accepts any audio-separator model (Demucs, RoFormer, MDX, VR). Models are cached in `~/.cache/aislice/models`.
 - Stems are checked against the mix: any model delay is corrected automatically, and the leftover difference is reported in `report.json`.

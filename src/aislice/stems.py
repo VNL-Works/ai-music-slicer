@@ -21,8 +21,14 @@ MODEL_SR = 44100  # separation models run at 44.1 kHz; stems are resampled back 
 # e.g. htdemucs_ft.yaml (best Demucs quality, ~4x slower) or a RoFormer model for vocals.
 PRESETS = {
     "2": ("htdemucs.yaml", "vocals + instrumental"),
+    "3": ("htdemucs.yaml", "drums, bass, melody (everything else)"),
     "4": ("htdemucs.yaml", "vocals, drums, bass, other"),
     "6": ("htdemucs_6s.yaml", "vocals, drums, bass, guitar, piano, other"),
+}
+# presets that merge model stems: output name -> model stems to keep (None = everything not listed)
+GROUPS = {
+    "2": {"vocals": ["vocals"], "instrumental": None},
+    "3": {"drums": ["drums"], "bass": ["bass"], "melody": None},
 }
 DEFAULT_MODEL_DIR = Path.home() / ".cache" / "aislice" / "models"
 INSTALL_HINT = 'stem separation needs the optional extra: pip install "aislice[stems]"'
@@ -127,19 +133,41 @@ def separate(mix: np.ndarray, sr: int, preset: str | None = "4", model: str | No
     e_mix = float(np.mean(mix.astype(np.float64) ** 2)) + 1e-20
     res.residual_db = round(10 * np.log10(float(np.mean((mix - total).astype(np.float64) ** 2)) / e_mix + 1e-20), 1)
 
-    if preset == "2" and set(stems) != {"vocals", "instrumental"}:
-        if "vocals" not in stems:
-            raise RuntimeError(f"model {model} has no vocals stem to build a 2-stem split from")
-        inst = sum(y for k, y in stems.items() if k != "vocals")
-        res.stems = {"vocals": stems["vocals"], "instrumental": inst}
+    if model is None or preset in GROUPS:
+        groups = GROUPS.get(preset)
+        if groups and set(stems) != set(groups):
+            res.stems = _group(stems, groups, res.model)
     return res
+
+
+def _group(stems: dict[str, np.ndarray], groups: dict, model: str) -> dict[str, np.ndarray]:
+    named = {k for v in groups.values() if v for k in v}
+    missing = named - set(stems)
+    if missing:
+        raise RuntimeError(f"model {model} has no {', '.join(sorted(missing))} stem for this preset")
+    out = {}
+    for name, members in groups.items():
+        keys = members if members else [k for k in stems if k not in named]
+        if keys:
+            out[name] = sum(stems[k] for k in keys)
+    return out
 
 
 def write_stems(res: StemResult, out_dir: Path, sr: int, bit_depth: str = "24") -> dict[str, Path]:
     d = out_dir / "stems"
     d.mkdir(parents=True, exist_ok=True)
+    old_names = {p.stem for p in d.glob("*.wav")}
     for old in d.glob("*.wav"):
         old.unlink()
+    # stem slice folders from a previous, different split would otherwise linger next to the new ones
+    for name in old_names - set(res.stems):
+        for unit_dir in out_dir.iterdir():
+            sub = unit_dir / name
+            if unit_dir.is_dir() and unit_dir.name.startswith("slices") and sub.is_dir():
+                for f in sub.glob("*.wav"):
+                    f.unlink()
+                if not any(sub.iterdir()):
+                    sub.rmdir()
     paths = {}
     for name, y in res.stems.items():
         p = d / f"{name}.wav"

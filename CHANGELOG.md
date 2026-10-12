@@ -1,6 +1,10 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.3.0 (2026-10-12)
+
+- Stems now default to **BS-Roformer-SW** (6-stem BS-RoFormer), which won a second listening test against `htdemucs_ft`. The 2/3/4 presets merge its six stems. `--stems-fast` still uses Demucs `htdemucs` (`htdemucs_6s` for 6 stems). The old default is still available with `--stem-model htdemucs_ft.yaml`.
+
+## 0.2.0 (2026-10-12)
 
 - **Stem separation (optional).** `--stems 2|3|4|6` splits the grid-locked song into stems (vocals/instrumental; drums/bass/melody; vocals/drums/bass/other; plus guitar/piano) and slices each stem with the same cut points as the mix. Install with `pip install "aislice[stems]"`.
 - `aislice stems <folder>` adds stems to an existing result without re-processing the tempo.

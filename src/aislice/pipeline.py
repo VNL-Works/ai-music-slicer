@@ -30,7 +30,7 @@ class Options:
     stem_model: str | None = None    # any audio-separator model filename; overrides the preset
     model_dir: Path | None = None    # where separation models are cached
     downbeats: str = "auto"          # auto (beat_this if installed), beat_this, harmony
-    stems_fast: bool = False         # htdemucs instead of htdemucs_ft (~4x faster)
+    stems_fast: bool = False         # Demucs instead of BS-Roformer-SW (much faster on CPU)
     stems_exact: bool = False        # put the separation leftover into melody/other so stems sum to the mix
 
 

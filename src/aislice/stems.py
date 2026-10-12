@@ -17,21 +17,23 @@ from . import io
 
 MODEL_SR = 44100  # separation models run at 44.1 kHz; stems are resampled back to the song's rate
 
-# Presets use Demucs v4 weights (MIT licensed): htdemucs_ft (fine-tuned bag of 4 models) by default, which
-# beat htdemucs and BS-Roformer-SW in a listening comparison on our test tracks. Any audio-separator
-# model can be used via --stem-model.
+# Presets use BS-Roformer-SW (6-stem BS-RoFormer by jarredou), which beat htdemucs_ft and htdemucs in a
+# listening comparison on our test tracks. It always outputs vocals/drums/bass/guitar/piano/other; the
+# 2/3/4 presets merge those. Any audio-separator model can be used via --stem-model.
+DEFAULT_MODEL = "BS-Roformer-SW.ckpt"
 PRESETS = {
-    "2": ("htdemucs_ft.yaml", "vocals + instrumental"),
-    "3": ("htdemucs_ft.yaml", "drums, bass, melody (everything else)"),
-    "4": ("htdemucs_ft.yaml", "vocals, drums, bass, other"),
-    "6": ("htdemucs_6s.yaml", "vocals, drums, bass, guitar, piano, other"),
+    "2": (DEFAULT_MODEL, "vocals + instrumental"),
+    "3": (DEFAULT_MODEL, "drums, bass, melody (everything else)"),
+    "4": (DEFAULT_MODEL, "vocals, drums, bass, other"),
+    "6": (DEFAULT_MODEL, "vocals, drums, bass, guitar, piano, other"),
 }
-# --stems-fast: single Demucs model, ~4x faster, slightly lower quality (6 stems has no fine-tuned variant)
-FAST_MODEL = "htdemucs.yaml"
+# --stems-fast: Demucs instead (much faster on CPU, lower quality)
+FAST_MODELS = {"2": "htdemucs.yaml", "3": "htdemucs.yaml", "4": "htdemucs.yaml", "6": "htdemucs_6s.yaml"}
 # presets that merge model stems: output name -> model stems to keep (None = everything not listed)
 GROUPS = {
     "2": {"vocals": ["vocals"], "instrumental": None},
     "3": {"drums": ["drums"], "bass": ["bass"], "melody": None},
+    "4": {"vocals": ["vocals"], "drums": ["drums"], "bass": ["bass"], "other": None},
 }
 DEFAULT_MODEL_DIR = Path.home() / ".cache" / "aislice" / "models"
 INSTALL_HINT = 'stem separation needs the optional extra: pip install "aislice[stems]"'
@@ -98,8 +100,7 @@ def _fit(y: np.ndarray, n: int, channels: int) -> np.ndarray:
 def preset_model(preset: str, fast: bool = False) -> str:
     if preset not in PRESETS:
         raise ValueError(f"unknown stems preset {preset!r} (use 2, 3, 4 or 6)")
-    m = PRESETS[preset][0]
-    return FAST_MODEL if fast and m == "htdemucs_ft.yaml" else m
+    return FAST_MODELS[preset] if fast else PRESETS[preset][0]
 
 
 REMAINDER_STEMS = ("melody", "other", "instrumental")  # where --stems-exact puts the leftover
@@ -145,12 +146,13 @@ def separate(mix: np.ndarray, sr: int, preset: str | None = "4", model: str | No
     e_mix = float(np.mean(mix.astype(np.float64) ** 2)) + 1e-20
     res.residual_db = round(10 * np.log10(float(np.mean((mix - total).astype(np.float64) ** 2)) / e_mix + 1e-20), 1)
 
-    if not explicit_model or preset in GROUPS:
+    # with --stem-model, only the explicit merge presets (2, 3) regroup; "4" keeps the model's own stems
+    if not explicit_model or preset in ("2", "3"):
         groups = GROUPS.get(preset)
         if groups and set(stems) != set(groups):
             res.stems = _group(stems, groups, res.model)
     if exact:
-        # Some models (e.g. htdemucs_ft: one specialist model per source) don't sum back to the mix.
+        # Some models (e.g. htdemucs_ft: one specialist model per source) don't sum exactly back to the mix.
         # Put the leftover into the catch-all stem so the stems recombine to the mix exactly.
         target = next((n for n in REMAINDER_STEMS if n in res.stems), list(res.stems)[-1])
         res.stems[target] = (res.stems[target] + (mix - sum(res.stems.values()))).astype(np.float32)

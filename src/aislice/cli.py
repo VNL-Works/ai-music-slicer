@@ -104,10 +104,10 @@ def _add_stem_args(ap):
     ap.add_argument("--stem-model", help="any audio-separator model filename (overrides the --stems preset), "
                                          "e.g. model_bs_roformer_ep_317_sdr_12.9755.ckpt")
     ap.add_argument("--stems-fast", action="store_true",
-                    help="use htdemucs instead of the default htdemucs_ft: ~4x faster, slightly lower quality")
+                    help="use Demucs (htdemucs) instead of the default BS-Roformer-SW: much faster on CPU, lower quality")
     ap.add_argument("--stems-exact", action="store_true",
                     help="add what the model leaves out into the melody/other stem, so the stems sum exactly "
-                         "to the mix (htdemucs_ft leaves ~1%% out)")
+                         "to the mix")
     ap.add_argument("--model-dir", help="folder to cache separation models in")
 
 

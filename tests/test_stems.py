@@ -156,8 +156,8 @@ def test_real_demucs_separation():
     for s in res.stems.values():
         assert s.shape == mix.shape
         assert np.sqrt(np.mean(s ** 2)) > 0                  # no empty/broken stem
-    # htdemucs_ft uses one specialist model per source, so its stems don't sum exactly to the mix:
-    # ~-19 dB on real music, ~-10 dB on these synthetic clicks. A broken separation is ~0 dB.
+    # Some models don't sum exactly to the mix (htdemucs_ft: ~-19 dB on real music, ~-10 dB on these
+    # synthetic clicks). A broken separation is ~0 dB.
     assert res.residual_db < -6
     assert abs(res.lag_samples) < sr * 0.005
 
@@ -192,17 +192,40 @@ def test_stems_cli_slice_none_means_no_stem_slices(tmp_path, monkeypatch):
     assert seen["units"] == []
 
 
-def test_default_is_htdemucs_ft_and_fast_switch():
+SIX = ("Vocals", "Drums", "Bass", "Guitar", "Piano", "Other")
+
+
+def test_default_is_bs_roformer_sw_and_fast_switch():
     seen = []
 
     def spy(wav, model, out_dir, model_dir=None):
         seen.append(model)
-        return fake_backend()(wav, model, out_dir, model_dir)
+        return fake_backend(SIX)(wav, model, out_dir, model_dir)
     mix, sr = _song(seconds=2.0)
     st.separate(mix, sr, "3", backend=spy)
     st.separate(mix, sr, "3", backend=spy, fast=True)
-    st.separate(mix, sr, "6", backend=spy, fast=True)          # no fine-tuned 6-stem: stays htdemucs_6s
-    assert seen == ["htdemucs_ft.yaml", "htdemucs.yaml", "htdemucs_6s.yaml"]
+    st.separate(mix, sr, "6", backend=spy, fast=True)
+    assert seen == ["BS-Roformer-SW.ckpt", "htdemucs.yaml", "htdemucs_6s.yaml"]
+
+
+@pytest.mark.parametrize("preset,names", [
+    ("2", ["vocals", "instrumental"]),
+    ("3", ["drums", "bass", "melody"]),
+    ("4", ["vocals", "drums", "bass", "other"]),
+    ("6", ["vocals", "drums", "bass", "guitar", "piano", "other"]),
+])
+def test_six_stem_model_merges_into_each_preset(preset, names):
+    mix, sr = _song()
+    res = st.separate(mix, sr, preset, backend=fake_backend(SIX))
+    assert list(res.stems) == names
+    total = sum(res.stems.values())
+    assert np.allclose(total[200:-200], mix[200:-200], atol=1e-4)    # merging loses nothing
+
+
+def test_explicit_model_with_default_preset_keeps_its_own_stems():
+    mix, sr = _song(seconds=2.0)
+    res = st.separate(mix, sr, "4", model="vocals_only.ckpt", backend=fake_backend(("Vocals", "Instrumental")))
+    assert list(res.stems) == ["vocals", "instrumental"]
 
 
 def test_stems_exact_recombines_to_the_mix():

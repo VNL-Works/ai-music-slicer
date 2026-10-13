@@ -228,3 +228,14 @@ def test_auto_best_n(tmp_path):
     assert main(["pick", str(tmp_path), "--auto", "--best", "1", "--group-by", "flat"]) == 0
     names = sorted(p.name for p in (tmp_path / "_ready").glob("*.wav"))
     assert len(names) == 3 and {n.split("_")[1] for n in names} == {"Drums", "Melody", "Vocals"}
+
+
+def test_server_starts_without_dns_lookup(monkeypatch, song):
+    """macOS CI: socket.getfqdn() in HTTPServer.server_bind hung >10 s. The Picker must not call it."""
+    import socket
+
+    from aislice.picker_server import LocalServer, Picker, make_handler
+    monkeypatch.setattr(socket, "getfqdn", lambda *a: pytest.fail("reverse DNS lookup"))
+    h = LocalServer(("127.0.0.1", 0), make_handler(Picker(song[0]), "t"))
+    assert h.server_name == "127.0.0.1" and h.server_port > 0
+    h.server_close()

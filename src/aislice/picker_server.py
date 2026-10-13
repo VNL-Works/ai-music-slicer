@@ -10,6 +10,7 @@ import secrets
 import threading
 import webbrowser
 from http import HTTPStatus
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import resources
 from pathlib import Path
@@ -262,11 +263,22 @@ def make_handler(app: Picker, token: str):
     return Handler
 
 
+class LocalServer(ThreadingHTTPServer):
+    """ThreadingHTTPServer without the reverse-DNS lookup of the bind address in server_bind(), which can hang
+    for many seconds on macOS. The server only ever listens on 127.0.0.1 anyway."""
+    daemon_threads = True
+
+    def server_bind(self):
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name, self.server_port = host, port
+
+
 def serve(path: Path, opts: dict | None = None, port: int = 0, open_browser: bool = True,
           log=print, ready=None, page: str = "/"):
     app = Picker(path, opts)
     token = secrets.token_urlsafe(16)
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), make_handler(app, token))
+    httpd = LocalServer(("127.0.0.1", port), make_handler(app, token))
     httpd.app = app
     url = f"http://127.0.0.1:{httpd.server_address[1]}{page}?t={token}"
     log(f"Picker running at {url}\n  {len(app.dirs)} song(s) in {app.root}. Press Ctrl+C to stop.")

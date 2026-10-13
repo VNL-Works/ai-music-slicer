@@ -31,6 +31,8 @@ def reslice(out_dir: Path, shift_beats: int = 0, units: list[str] | None = None,
         next(p for p in out_dir.glob("*.wav"))
     y, sr = io.read(full)
     stem = full.stem.rsplit("_", 1)[0]
+    old_gains = (r.get("normalize") or {}).get("gains_db") or {}
+    y = io.undo_gain(y, old_gains.get("mix", 0.0))          # work at the original level, normalize again below
 
     # bar lines (after the shift) sit at Dm + k*bar
     D = float(r["grid"]["first_downbeat_output_s"]) + shift_beats * T
@@ -57,19 +59,33 @@ def reslice(out_dir: Path, shift_beats: int = 0, units: list[str] | None = None,
         return np.concatenate([np.zeros((-offset, a.shape[1]), a.dtype), a])
 
     y = move(y)
+    gains = {}
+    y, gains["mix"] = io.normalize(y)
     io.write(full, y, sr)
     stems = {}
     for name, (sy, ssr) in st.read_stems(out_dir).items():
-        stems[name] = _fit_len(move(sy), len(y))
+        stems[name], gains[name] = io.normalize(_fit_len(move(io.undo_gain(sy, old_gains.get(name, 0.0))), len(y)))
         io.write(out_dir / "stems" / f"{name}.wav", stems[name], ssr)
 
-    if units is None:  # re-cut whatever slice folders already exist
-        units = [u for p in sorted(out_dir.iterdir()) if p.is_dir() and (u := slicer.unit_for_folder(p.name))]
-    counts = {u: slicer.write_slices(y, sr, bpm, u, bpb, out_dir, stem, fade_ms, drop_partial) for u in units}
-    for u in units:
-        if stems:
-            slicer.write_stem_slices(stems, sr, bpm, u, bpb, out_dir, stem, fade_ms=fade_ms,
-                                     drop_partial=drop_partial)
+    counts = {}
+    if units is None:  # re-cut exactly what exists: the mix and each stem in the folders they were in
+        for p in sorted(out_dir.iterdir()):
+            u = slicer.unit_for_folder(p.name) if p.is_dir() else None
+            if not u:
+                continue
+            if any(p.glob("*.wav")) or not any(q.is_dir() for q in p.iterdir()):
+                counts[u] = slicer.write_slices(y, sr, bpm, u, bpb, out_dir, stem, fade_ms, drop_partial)
+            sub = {q.name for q in p.iterdir() if q.is_dir()}
+            if sub & set(stems):
+                slicer.write_stem_slices({k: v for k, v in stems.items() if k in sub}, sr, bpm, u, bpb, out_dir,
+                                         stem, fade_ms=fade_ms, drop_partial=drop_partial)
+    else:
+        for u in units:
+            mu = slicer.standard_unit("mix") if u == slicer.STANDARD else u
+            counts[mu] = slicer.write_slices(y, sr, bpm, mu, bpb, out_dir, stem, fade_ms, drop_partial)
+            if stems:
+                slicer.write_stem_slices(stems, sr, bpm, u, bpb, out_dir, stem, fade_ms=fade_ms,
+                                         drop_partial=drop_partial)
 
     g = r["grid"]
     g["first_downbeat_output_s"] = round(new_db, 4)
@@ -78,6 +94,7 @@ def reslice(out_dir: Path, shift_beats: int = 0, units: list[str] | None = None,
     r["slices"] = {u: {"count": c, "samples_per_slice": round(slicer.unit_beats(u, bpb) * T * sr, 3)}
                    for u, c in counts.items()}
     r["duration"]["output_s"] = round(len(y) / sr, 3)
+    r["normalize"] = {"peak_db": io.PEAK_DB, "gains_db": gains}
     rpath.write_text(json.dumps(r, indent=2))
     log(f"{out_dir.name}: bar 1 moved {shift_beats:+d} beat(s); " +
         ", ".join(f"{c} x {u}" for u, c in counts.items()) + (f" (+ stems: {', '.join(stems)})" if stems else ""))

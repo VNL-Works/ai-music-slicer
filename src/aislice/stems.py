@@ -184,8 +184,9 @@ def write_stems(res: StemResult, out_dir: Path, sr: int, bit_depth: str = "24") 
         for unit_dir in out_dir.iterdir():
             sub = unit_dir / name
             if unit_dir.is_dir() and unit_dir.name.startswith("slices") and sub.is_dir():
-                for f in sub.glob("*.wav"):
-                    f.unlink()
+                for f in [*sub.glob("*.wav"), sub / io.GAINS_FILE]:
+                    if f.exists():
+                        f.unlink()
                 if not any(sub.iterdir()):
                     sub.rmdir()
     paths = {}

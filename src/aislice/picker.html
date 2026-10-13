@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aislice Picker</title>
+<style>
+:root{
+  --bg:#f6f6f4; --panel:#ffffff; --ink:#1d1d1b; --muted:#6b6b66; --line:#dcdcd6;
+  --cell:#efefeb; --wave:#3c3c38; --accent:#2f6fde; --keep:#1f9d55; --skip:#b0b0a8; --play:#e8850c;
+  --focus:#2f6fde;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#141413; --panel:#1d1d1b; --ink:#ecebe6; --muted:#9a9a93; --line:#33332f;
+         --cell:#262623; --wave:#cfcec8; --accent:#6c9cff; --keep:#3ccf7d; --skip:#55554f; --play:#ffa53d; --focus:#6c9cff; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,select{font:inherit;color:inherit;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+button:hover,select:hover{border-color:var(--muted)}
+button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary{background:var(--keep);border-color:var(--keep);color:#fff;font-weight:600}
+.app{display:grid;grid-template-columns:220px 1fr;height:100%}
+aside{border-right:1px solid var(--line);background:var(--panel);overflow:auto;padding:12px}
+aside h1{font-size:15px;margin:0 0 10px}
+.song{padding:8px 10px;border-radius:6px;cursor:pointer;margin-bottom:2px}
+.song:hover{background:var(--cell)}
+.song.sel{background:var(--accent);color:#fff}
+.song small{display:block;opacity:.75}
+main{display:flex;flex-direction:column;min-width:0}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+header .title{font-weight:600;font-size:16px;margin-right:6px}
+header .meta{color:var(--muted);margin-right:auto}
+.group{display:flex;gap:4px;align-items:center}
+.keys{padding:6px 14px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font:11px ui-monospace,monospace;background:var(--panel)}
+.gridwrap{overflow:auto;flex:1;padding:12px 14px 40px}
+.grid{display:grid;grid-template-columns:auto 1fr;gap:6px 10px;align-items:center;width:max-content}
+.rlabel{font-weight:500;color:var(--muted);font-size:12px;text-align:right;white-space:nowrap;position:sticky;left:0;background:var(--bg);z-index:1;padding:0 4px}
+.rlabel small{display:block;font-size:10px;opacity:.8}
+.rlabel.muted{text-decoration:line-through;opacity:.5}
+.line{display:flex;gap:4px}
+.ruler{display:flex;gap:4px;color:var(--muted);font-size:11px}
+.ruler span{width:76px;flex:none}
+.cell{position:relative;flex:none;height:46px;border-radius:6px;background:var(--cell);cursor:pointer;border:2px solid transparent;overflow:hidden}
+.cell .song{position:absolute;left:3px;bottom:2px;font-size:9px;font-weight:600;background:var(--panel);border-radius:3px;padding:0 3px;line-height:12px;max-width:90%;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cell .stripe{position:absolute;left:0;top:0;bottom:0;width:4px}
+.song.star b{color:var(--accent)}
+.cell canvas{position:absolute;inset:0;width:100%;height:100%}
+.cell.hidden{visibility:hidden}
+.cell.empty{background:transparent;border:1.5px dashed var(--line);cursor:default}
+.cell.empty.show{cursor:pointer}
+.cell.sel{border-color:var(--focus)}
+.cell.play{box-shadow:0 0 0 2px var(--play) inset}
+.cell.keep{border-color:var(--keep)}
+.cell.keep::after{content:"✓";position:absolute;right:4px;top:1px;color:var(--keep);font-weight:700;font-size:12px}
+.cell.skip{opacity:.35}
+.cell .badge{position:absolute;left:3px;top:2px;font-size:10px;font-weight:700;background:var(--panel);border-radius:3px;padding:0 3px;line-height:14px}
+.cell .tag{position:absolute;left:3px;bottom:2px;font-size:9px;color:var(--muted);background:var(--panel);border-radius:3px;padding:0 3px;line-height:12px}
+.cell .dot{position:absolute;right:5px;bottom:4px;width:5px;height:5px;border-radius:50%;background:var(--muted)}
+.cell.sel.keep{border-color:var(--focus);box-shadow:0 0 0 2px var(--keep) inset}
+.status{position:fixed;bottom:12px;right:14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 12px;max-width:520px;box-shadow:0 4px 18px rgba(0,0,0,.15);display:none}
+.status.show{display:block}
+.loading{padding:40px;color:var(--muted)}
+.legend{color:var(--muted);font-size:12px;margin:8px 4px}
+@media (max-width:720px){.app{grid-template-columns:1fr}aside{max-height:140px;border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside><h1>aislice Picker</h1><div id="songs"></div></aside>
+  <main>
+    <header>
+      <span class="title" id="title">…</span><span class="meta" id="meta"></span>
+      <div class="group" id="filters">
+        <button data-f="best" class="on" title="B: only the best loops per stem">Best</button><button data-f="all">All</button><button data-f="kept">Kept</button><button data-f="unheard">Not heard</button>
+        <select id="bestN" title="How many best loops per stem"><option>3</option><option selected>6</option><option>10</option><option>20</option></select>
+      </div>
+      <button id="compact" title="C">Compact</button>
+      <button id="showMix" title="M: the full song cut into loops (all instruments together)">Show mix</button>
+      <button id="showEmpty" title="E">Show empty</button>
+      <div class="group"><select id="groupBy" title="Export folder layout">
+        <option value="song">By song</option><option value="stem">By stem</option><option value="flat">Flat</option></select>
+        <button class="primary" id="export">Export</button></div>
+      <a id="jamlink" href="#" style="color:var(--accent);font-weight:600">Jam →</a>
+    </header>
+    <div class="keys">
+      <kbd>←↑→↓</kbd> move · <kbd>Space</kbd> play/stop (loops) · <kbd>K</kbd> keep (group's best) · <kbd>Shift K</kbd> keep whole group ·
+      <kbd>S</kbd> skip group · <kbd>U</kbd> undo · <kbd>A</kbd> play all stems at this spot (inside a song), <kbd>1</kbd>–<kbd>9</kbd> toggle stems ·
+      <kbd>B</kbd> best only / all · <kbd>M</kbd> show mix · <kbd>C</kbd> compact · <kbd>E</kbd> show empty · <kbd>Esc</kbd> stop
+    </div>
+    <div class="gridwrap" id="gridwrap"><div class="loading">Loading…</div></div>
+  </main>
+</div>
+<div class="status" id="status"></div>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const U = 76, GAP = 4;                       // width of one 4-bar box, gap between boxes
+const $ = s => document.querySelector(s);
+const api = async (path, body) => {
+  const r = await fetch(path, body === undefined ? {headers: {"X-Token": TOKEN}} :
+    {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const S = {songs: [], song: null, model: null, marks: {}, heard: {}, sel: {r: 0, c: 0},
+           filter: "best", bestN: 6, compact: false, showMix: false, showEmpty: false, undo: [], muted: new Set(), playing: null};
+let ctx = null;
+const buffers = new Map();
+let status_t = null;
+function status(msg, ms = 3500) {
+  const el = $("#status"); el.textContent = msg; el.classList.add("show");
+  clearTimeout(status_t); if (ms) status_t = setTimeout(() => el.classList.remove("show"), ms);
+}
+const best = () => !!S.model?.best_of_all;
+const key = cell => `${cell.unit}|${cell.row}|${cell.i}`;
+const markOf = cell => (S.marks[cell.sid] || {})[key(cell)];
+const heardOf = cell => (S.heard[cell.sid] || new Set()).has(key(cell));
+const rows = () => S.model ? S.model.rows : [];
+const cellAt = (r, c) => rows()[r]?.cells[c];
+const hue = n => `hsl(${(n * 97 + 200) % 360},65%,55%)`;
+const widthOf = row => (row.bars / 4) * U + (row.bars / 4 - 1) * GAP;
+function groupCells(r, cell) {
+  if (best()) return cell.members.map(i => ({...cell, i}));
+  return cell.group == null ? [cell] : rows()[r].cells.filter(x => x.group === cell.group);
+}
+const groupRep = (r, cell) => best() ? cell : (groupCells(r, cell).find(x => x.rep) || cell);
+const rankOf = cell => best() ? cell.overall : cell.best;
+
+function visible(r, c) {
+  const cell = cellAt(r, c); if (!cell) return false;
+  if (rows()[r].name === "mix" && !S.showMix) return false;
+  if (cell.empty && !S.showEmpty) return false;
+  if (S.compact && !cell.rep && !cell.empty) return false;
+  if (S.filter === "kept" && markOf(cell) !== "keep") return false;
+  if (S.filter === "unheard" && heardOf(cell)) return false;
+  if (S.filter === "best" && !(rankOf(cell) != null && rankOf(cell) < S.bestN) && markOf(cell) !== "keep") return false;
+  return true;
+}
+function tint(row, g) { return g == null ? null : `hsla(${(g * 67 + row * 23) % 360},60%,55%,0.22)`; }
+
+// ---------------------------------------------------------------- songs
+async function loadSongs() {
+  const j = await api("/api/songs");
+  S.songs = j.songs; $("#groupBy").value = j.group_by || "song";
+  const el = $("#songs"); el.innerHTML = "";
+  const add = (id, name, sub, star) => {
+    const d = document.createElement("div"); d.className = "song" + (star ? " star" : ""); d.dataset.id = id;
+    d.innerHTML = `<b></b><small></small>`; d.querySelector("b").textContent = name; d.querySelector("small").textContent = sub;
+    d.onclick = () => openSong(id); el.appendChild(d);
+  };
+  if (S.songs.length > 1) add("*", "★ Best of all songs", "top loops from every song", true);
+  for (const s of S.songs) add(s.id, s.song, `${s.bpm} BPM · ${s.kept} kept`);
+  if (S.songs.length) openSong(S.songs.length > 1 ? "*" : S.songs[0].id);
+}
+async function openSong(id) {
+  stop();
+  S.song = id;
+  document.querySelectorAll(".song").forEach(d => d.classList.toggle("sel", d.dataset.id === id));
+  $("#gridwrap").innerHTML = `<div class="loading">Analysing… (first time only, takes a few seconds per song)</div>`;
+  try {
+    const j = await api(`/api/song?id=${encodeURIComponent(id)}&n=20`);
+    S.model = j.model; S.marks = j.marks; S.heard = {}; for (const k in j.heard) S.heard[k] = new Set(j.heard[k]);
+    S.undo = []; S.muted.clear();
+    for (const r of S.model.rows) for (const c of r.cells) { c.row = r.name; c.unit = r.unit; if (!c.sid) c.sid = id; }
+    $("#title").textContent = S.model.song;
+    const k = S.model.key || {};
+    $("#meta").textContent = best() ? `${S.model.bpm} BPM · ranked across ${S.model.songs.length} songs: most repeated, not quiet, fullest`
+      : `${S.model.bpm} BPM · ${S.model.meter}` + (k.key ? ` · key ${k.key}${k.confident ? "" : "?"} (guess)` : "");
+    S.sel = {r: 0, c: 0}; firstVisible();
+    render();
+  } catch (e) { $("#gridwrap").innerHTML = ""; status("Could not open: " + e.message, 0); }
+}
+function firstVisible() {
+  for (let r = 0; r < rows().length; r++) {
+    const cs = rows()[r].cells.map((_, c) => c);
+    if (best()) cs.sort((a, b) => rows()[r].cells[a].overall - rows()[r].cells[b].overall);
+    for (const c of cs) if (visible(r, c)) { S.sel = {r, c}; return; }
+  }
+}
+
+// ---------------------------------------------------------------- grid
+function render() {
+  const m = S.model; if (!m) return;
+  const g = document.createElement("div"); g.className = "grid";
+  if (!best()) {                                   // ruler: one tick per 4 bars
+    const total = Math.max(...m.rows.map(r => r.cells.length * r.bars));
+    g.appendChild(document.createElement("div"));
+    const ru = document.createElement("div"); ru.className = "ruler";
+    for (let b = 0; b < total; b += 4) { const s = document.createElement("span"); s.textContent = "bar " + (b + 1); ru.appendChild(s); }
+    g.appendChild(ru);
+  }
+  let stemNo = 0;
+  m.rows.forEach((row, r) => {
+    if (row.name === "mix" && !S.showMix) return;
+    const lab = document.createElement("div"); lab.className = "rlabel";
+    if (row.name !== "mix") stemNo++;
+    lab.innerHTML = `<span></span><small></small>`;
+    lab.querySelector("span").textContent = row.label + (row.name !== "mix" && !best() ? ` (${stemNo})` : "");
+    lab.querySelector("small").textContent = `${row.bars}-bar loops`;
+    if (S.muted.has(row.name)) lab.classList.add("muted");
+    g.appendChild(lab);
+    const line = document.createElement("div"); line.className = "line";
+    let order = row.cells.map((_, c) => c);
+    if (best()) order = order.filter(c => visible(r, c)).sort((a, b) => row.cells[a].overall - row.cells[b].overall);
+    for (const c of order) {
+      const cell = row.cells[c];
+      const d = document.createElement("div"); d.className = "cell"; d.dataset.r = r; d.dataset.c = c;
+      d.style.width = widthOf(row) + "px";
+      line.appendChild(d);
+      if (cell.empty) { d.classList.add("empty"); if (S.showEmpty) d.classList.add("show"); }
+      if (!visible(r, c)) { if (!cell.empty) d.classList.add("hidden"); continue; }
+      const mk = markOf(cell);
+      if (mk === "keep") d.classList.add("keep");
+      if (mk === "skip") d.classList.add("skip");
+      if (S.sel.r === r && S.sel.c === c) d.classList.add("sel");
+      if (S.playing && S.playing.cells.some(p => p.r === r && p.c === c)) d.classList.add("play");
+      const tg = !best() && cell.count > 1 ? tint(r, cell.group) : null;
+      if (tg && !cell.empty) d.style.background = tg;
+      const cv = document.createElement("canvas"); d.appendChild(cv);
+      if (best()) { const st = document.createElement("span"); st.className = "stripe"; st.style.background = hue(cell.song_no); d.appendChild(st);
+                    const sn = document.createElement("span"); sn.className = "song"; sn.textContent = cell.song + " · " + cell.i; d.appendChild(sn); }
+      if (cell.rep && cell.count > 1) { const b = document.createElement("span"); b.className = "badge"; b.textContent = "×" + cell.count; d.appendChild(b); }
+      const rk = rankOf(cell);
+      const tag = cell.empty ? cell.why : cell.quiet ? "quiet" : cell.partial ? "partial" :
+                  (S.filter === "best" && rk != null && rk < S.bestN && !best()) ? "#" + (rk + 1) : "";
+      if (tag) { const s = document.createElement("span"); s.className = "tag"; s.textContent = tag; d.appendChild(s); }
+      if (best() && rk != null) { const b = document.createElement("span"); b.className = "badge"; b.style.left = "auto"; b.style.right = "16px"; b.textContent = "#" + (rk + 1); d.appendChild(b); }
+      if (heardOf(cell)) { const s = document.createElement("span"); s.className = "dot"; d.appendChild(s); }
+      d.title = `${best() ? cell.song + " · " : ""}${row.label} ${row.unit} ${cell.i}` + (rk != null ? ` · #${rk + 1} best` : "") +
+                (cell.count > 1 ? ` · repeats ${cell.count}×` : "") + ` · peak ${cell.peak_db} dB` + (cell.empty ? ` · hidden: ${cell.why}` : "");
+      d.onclick = ev => { S.sel = {r, c}; if (ev.shiftKey) playColumn(); else playCell(r, c); };
+      requestAnimationFrame(() => drawWave(cv, cell.peaks));
+    }
+    if (best() && !line.children.length) { const e = document.createElement("span"); e.className = "legend"; e.textContent = "nothing here with this filter"; line.appendChild(e); }
+    g.appendChild(line);
+  });
+  const w = $("#gridwrap"); w.innerHTML = ""; w.appendChild(g);
+  const lg = document.createElement("div"); lg.className = "legend";
+  const kept = Object.values(S.marks).reduce((n, mk) => n + Object.values(mk).filter(v => v === "keep").length, 0);
+  lg.textContent = best()
+    ? `${kept} kept · the best loops of every song, ranked together (#1 = top). Songs: ` + m.songs.map(s => s.song).join(", ")
+    : `${kept} kept · ` + m.rows.filter(r => r.name !== "mix" || S.showMix).map(r => { const live = r.cells.filter(c => !c.empty); return `${r.label}: ${live.length} loops, ${new Set(live.map(c => c.group)).size} different`; }).join(" · ") +
+      ` · same tint = repeats, ×N = how many` + (S.filter === "best" ? ` · Best = most repeated, not quiet, fullest (#1 = top)` : "");
+  w.appendChild(lg);
+  scrollSel();
+}
+function drawWave(cv, peaks) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!w) return;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext("2d"); g.scale(dpr, dpr);
+  g.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--wave");
+  const bw = w / peaks.length;
+  peaks.forEach((p, i) => { const a = Math.min(1, p) * (h / 2 - 3); g.fillRect(i * bw + 0.5, h / 2 - a, Math.max(1, bw - 1), Math.max(1, a * 2)); });
+}
+function scrollSel() {
+  const el = document.querySelector(`.cell[data-r="${S.sel.r}"][data-c="${S.sel.c}"]`);
+  if (el) el.scrollIntoView({block: "nearest", inline: "nearest"});
+}
+
+// ---------------------------------------------------------------- audio
+async function buffer(cell) {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const id = cell.sid + "|" + cell.file;
+  if (!buffers.has(id)) {
+    buffers.set(id, (async () => {
+      const r = await fetch(`/audio?id=${encodeURIComponent(cell.sid)}&f=${encodeURIComponent(cell.file)}`, {headers: {"X-Token": TOKEN}});
+      if (!r.ok) throw new Error("audio " + r.status);
+      return ctx.decodeAudioData(await r.arrayBuffer());
+    })());
+  }
+  return buffers.get(id);
+}
+function stop() {
+  if (S.playing) { for (const s of S.playing.sources) try { s.stop(); } catch (e) {} }
+  S.playing = null;
+  document.querySelectorAll(".cell.play").forEach(e => e.classList.remove("play"));
+}
+async function startCells(list) {   // list of {r,c}; loops them together in sync
+  stop();
+  const token = {};
+  S.playing = {cells: list, sources: [], gains: {}, token};
+  try {
+    const bufs = await Promise.all(list.map(p => buffer(cellAt(p.r, p.c))));
+    if (S.playing?.token !== token) return;
+    if (ctx.state === "suspended") await ctx.resume();
+    const t0 = ctx.currentTime + 0.05;
+    list.forEach((p, k) => {
+      const src = ctx.createBufferSource(); src.buffer = bufs[k]; src.loop = true;
+      const g = ctx.createGain(); const name = rows()[p.r].name;
+      g.gain.value = S.muted.has(name) ? 0 : 1; src.connect(g).connect(ctx.destination); src.start(t0);
+      S.playing.sources.push(src); S.playing.gains[name] = g;
+      markHeard(cellAt(p.r, p.c));
+    });
+    document.querySelectorAll(".cell.play").forEach(e => e.classList.remove("play"));
+    list.forEach(p => document.querySelector(`.cell[data-r="${p.r}"][data-c="${p.c}"]`)?.classList.add("play"));
+  } catch (e) { status("Playback failed: " + e.message); }
+}
+function playCell(r, c) { S.muted.clear(); startCells([{r, c}]); render(); }
+function startBar(r, c) { return c * rows()[r].bars; }
+function cellAtTime(r, bar) { return Math.floor(bar / rows()[r].bars); }
+function playColumn() {
+  if (best()) return status("Open a song on the left to play its stems together");
+  const t = startBar(S.sel.r, S.sel.c), list = [];
+  rows().forEach((row, r) => { const c = cellAtTime(r, t), cell = row.cells[c]; if (row.name !== "mix" && cell && !cell.empty) list.push({r, c}); });
+  if (!list.length) return status("No stems with sound here");
+  startCells(list); status("Playing all stems here · press 1–9 to switch stems on/off");
+}
+function toggleStem(n) {
+  const stems = rows().filter(r => r.name !== "mix");
+  const row = stems[n - 1]; if (!row) return;
+  S.muted.has(row.name) ? S.muted.delete(row.name) : S.muted.add(row.name);
+  if (S.playing?.gains[row.name]) S.playing.gains[row.name].gain.setTargetAtTime(S.muted.has(row.name) ? 0 : 1, ctx.currentTime, 0.01);
+  render();
+}
+async function markHeard(cell) {
+  const k = key(cell);
+  (S.heard[cell.sid] ||= new Set());
+  if (S.heard[cell.sid].has(k)) return;
+  S.heard[cell.sid].add(k);
+  try { await api("/api/heard", {id: cell.sid, key: k}); } catch (e) {}
+}
+
+// ---------------------------------------------------------------- marking
+async function setMarks(sid, keys, value, record = true) {
+  if (record) S.undo.push({sid, prev: keys.map(k => [k, (S.marks[sid] || {})[k] ?? null])});
+  try {
+    const j = await api("/api/mark", {id: sid, keys, value});
+    S.marks[sid] = j.marks; render(); updateSongCount(sid);
+  } catch (e) { status("Could not save: " + e.message); }
+}
+async function undo() {
+  const last = S.undo.pop(); if (!last) return status("Nothing to undo");
+  for (const [k, v] of last.prev) await setMarks(last.sid, [k], v, false);
+}
+function updateSongCount(sid) {
+  const el = document.querySelector(`.song[data-id="${CSS.escape(sid)}"] small`);
+  const s = S.songs.find(x => x.id === sid);
+  const n = Object.values(S.marks[sid] || {}).filter(v => v === "keep").length;
+  if (el && s) el.textContent = `${s.bpm} BPM · ${n} kept`;
+}
+function keep(all) {
+  const {r, c} = S.sel, cell = cellAt(r, c); if (!cell || cell.empty) return;
+  const members = groupCells(r, cell);
+  if (all || members.length === 1) setMarks(cell.sid, members.map(key), "keep");
+  else {
+    const rep = groupRep(r, cell);
+    setMarks(cell.sid, [key(rep)], "keep");
+    if (rep !== cell) status(`Kept slice ${rep.i}, the best of this group of ${members.length} (Shift+K keeps all)`);
+  }
+}
+function skip() {
+  const {r, c} = S.sel, cell = cellAt(r, c); if (!cell) return;
+  setMarks(cell.sid, groupCells(r, cell).map(key), "skip");
+}
+
+// ---------------------------------------------------------------- navigation
+function move(dr, dc) {
+  const R = rows().length; if (!R) return;
+  let {r, c} = S.sel;
+  if (best()) {          // rows are ranked lists: move along the visible order
+    const vis = rr => rows()[rr].cells.map((_, i) => i).filter(i => visible(rr, i)).sort((a, b) => rows()[rr].cells[a].overall - rows()[rr].cells[b].overall);
+    if (dc) { const v = vis(r), k = v.indexOf(c) + dc; if (k >= 0 && k < v.length) S.sel = {r, c: v[k]}; }
+    else { for (let rr = r + dr; rr >= 0 && rr < R; rr += dr) { const v = vis(rr); if (v.length) { const k = Math.max(0, vis(r).indexOf(c)); S.sel = {r: rr, c: v[Math.min(k, v.length - 1)]}; break; } } }
+    render(); return;
+  }
+  for (let step = 0; step < 400; step++) {
+    if (dc) c += dc;
+    else { const t = startBar(r, c); r += dr; if (r < 0 || r >= R) return; c = cellAtTime(r, t); }
+    if (r < 0 || r >= R) return;
+    const n = rows()[r].cells.length;
+    if (c < 0 || c >= n) { if (dr) c = Math.min(Math.max(c, 0), n - 1); else return; }
+    if (visible(r, c)) { S.sel = {r, c}; render(); return; }
+    if (dr) { dc = 0; }
+  }
+}
+document.addEventListener("keydown", ev => {
+  if (ev.target.tagName === "SELECT" || ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const k = ev.key;
+  const map = {ArrowLeft: () => move(0, -1), ArrowRight: () => move(0, 1), ArrowUp: () => move(-1, 0), ArrowDown: () => move(1, 0)};
+  if (map[k]) { ev.preventDefault(); map[k](); if (S.playing && S.playing.cells.length === 1) playCell(S.sel.r, S.sel.c); return; }
+  if (k === " ") { ev.preventDefault(); if (S.playing) { stop(); render(); } else playCell(S.sel.r, S.sel.c); return; }
+  if (k === "k") return keep(false);
+  if (k === "K") return keep(true);
+  if (k === "s" || k === "S") return skip();
+  if (k === "u" || k === "U") return undo();
+  if (k === "a" || k === "A") return playColumn();
+  if (k === "c" || k === "C") return toggleCompact();
+  if (k === "m" || k === "M") return toggleMix();
+  if (k === "e" || k === "E") return toggleEmpty();
+  if (k === "b" || k === "B") { const f = S.filter === "best" ? "all" : "best"; return document.querySelector(`#filters button[data-f="${f}"]`).click(); }
+  if (k === "Escape") { stop(); render(); return; }
+  if (/^[1-9]$/.test(k)) return toggleStem(+k);
+});
+function toggleMix() { S.showMix = !S.showMix; $("#showMix").classList.toggle("on", S.showMix); if (!visible(S.sel.r, S.sel.c)) firstVisible(); render(); }
+$("#showMix").onclick = toggleMix;
+function toggleCompact() { S.compact = !S.compact; $("#compact").classList.toggle("on", S.compact); if (!visible(S.sel.r, S.sel.c)) firstVisible(); render(); }
+function toggleEmpty() { S.showEmpty = !S.showEmpty; $("#showEmpty").classList.toggle("on", S.showEmpty); if (!visible(S.sel.r, S.sel.c)) firstVisible(); render(); }
+$("#compact").onclick = toggleCompact;
+$("#showEmpty").onclick = toggleEmpty;
+$("#filters").onclick = ev => {
+  const f = ev.target.dataset?.f; if (!f) return;
+  S.filter = f; document.querySelectorAll("#filters button").forEach(b => b.classList.toggle("on", b.dataset.f === f));
+  if (!visible(S.sel.r, S.sel.c)) firstVisible(); render();
+};
+$("#bestN").onchange = ev => { S.bestN = +ev.target.value; if (S.filter !== "best") $("#filters button[data-f=best]").click(); else { if (!visible(S.sel.r, S.sel.c)) firstVisible(); render(); } };
+$("#export").onclick = async () => {
+  status("Exporting…", 0);
+  try {
+    const j = await api("/api/export", {group_by: $("#groupBy").value});
+    status(j.files.length ? `Exported ${j.files.length} file(s) to ${j.folder}` : "Nothing kept yet: press K on slices you like", 8000);
+  } catch (e) { status("Export failed: " + e.message, 0); }
+};
+$("#jamlink").href = "/jam?t=" + encodeURIComponent(TOKEN);
+loadSongs().catch(e => status("Could not load: " + e.message, 0));
+</script>
+</body>
+</html>

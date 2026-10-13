@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>aislice Jam</title>
+<style>
+:root{--bg:#121211;--panel:#1b1b19;--panel2:#24241f;--ink:#efeee9;--muted:#9a9990;--line:#33332e;--accent:#6c9cff;--rec:#ff4d4d;--go:#3ccf7d}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){--bg:#f4f4f1;--panel:#fff;--panel2:#ececE7;--ink:#1d1d1b;--muted:#6b6b66;--line:#d8d8d2;--accent:#2f6fde;--rec:#d92b2b;--go:#1f9d55}}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,select{font:inherit;color:inherit;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.brand{font-weight:700;margin-right:6px}
+#play{min-width:84px;font-weight:600}
+#play.on{background:var(--go);border-color:var(--go);color:#fff}
+#rec{font-weight:600}
+#rec.on{background:var(--rec);border-color:var(--rec);color:#fff;animation:pulse 1s infinite}
+@keyframes pulse{50%{opacity:.7}}
+.counter{font:600 18px ui-monospace,monospace;min-width:92px;text-align:center;background:var(--bg);border-radius:8px;padding:3px 10px}
+.beats{display:flex;gap:4px}
+.beats i{width:10px;height:10px;border-radius:50%;background:var(--line)}
+.beats i.on{background:var(--accent)}
+.sp{flex:1}
+a{color:var(--accent)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;padding:8px 16px;color:var(--muted);font-size:12px}
+.chip{padding:3px 10px;border-radius:99px;font-size:12px}
+.chip::before{content:"";display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:6px;background:var(--c,var(--muted));vertical-align:-1px}
+.chip.off{opacity:.45;text-decoration:line-through}
+.more{margin-top:2px;font-size:12px;color:var(--muted);background:transparent;border-style:dashed}
+.tracks{display:flex;gap:12px;padding:8px 16px 90px;overflow-x:auto;align-items:flex-start}
+.track{flex:0 0 190px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.thead{padding:10px;border-bottom:1px solid var(--line);display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center}
+.thead b{font-size:15px}
+.thead button{padding:2px 8px;font-size:12px}
+.thead button.mute.on{background:#e8a33d;border-color:#e8a33d;color:#111}
+.thead input{grid-column:1/-1;width:100%;accent-color:var(--accent)}
+.pads{display:flex;flex-direction:column;gap:6px;padding:8px;max-height:calc(100vh - 230px);overflow-y:auto}
+.pad{position:relative;height:54px;border-radius:9px;background:var(--panel2);border:2px solid transparent;cursor:pointer;overflow:hidden;
+     display:flex;align-items:flex-end;padding:0 8px 5px 12px;user-select:none}
+.pad::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--c)}
+.pad canvas{position:absolute;inset:0;width:100%;height:100%;opacity:.45}
+.pad .lbl{position:relative;font-size:12px;font-weight:600;text-shadow:0 1px 2px var(--bg)}
+.pad .tags{position:absolute;right:6px;top:4px;font-size:10px;font-weight:700;display:flex;gap:4px}
+.pad .tags span{background:var(--bg);border-radius:4px;padding:0 4px}
+.pad .prog{position:absolute;left:0;bottom:0;height:3px;background:var(--go);width:0}
+.pad:hover{border-color:var(--muted)}
+.pad.playing{border-color:var(--go);background:color-mix(in srgb,var(--go) 22%,var(--panel2))}
+.pad.queued{border-color:var(--accent);animation:blink .35s steps(2) infinite}
+.pad.stopping{border-color:#e8a33d}
+@keyframes blink{50%{border-color:transparent}}
+footer{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--line);padding:8px 16px;font-size:12px;color:var(--muted);display:flex;gap:16px;flex-wrap:wrap;align-items:center}
+kbd{border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;font:11px ui-monospace,monospace;background:var(--panel2);color:var(--ink)}
+#msg{color:var(--ink);margin-left:auto}
+.empty{padding:40px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">aislice Jam</span>
+  <button id="play" title="Space">▶ Play</button>
+  <div class="counter" id="counter">1 · 1</div>
+  <div class="beats" id="beats"></div>
+  <button id="rec" title="R">● Record</button>
+  <span id="recinfo" style="color:var(--muted)"></span>
+  <span class="sp"></span>
+  <label id="bpmwrap">BPM <select id="bpm"></select></label>
+  <a id="picker" href="#">Picker →</a>
+</header>
+<div class="legend" id="legend"></div>
+<div class="tracks" id="tracks"><div class="empty">Loading pads… (first time analyses the songs, takes a few seconds)</div></div>
+<footer>
+  <span>Click a pad: it starts on the next bar. Click it again to stop. One pad per column plays at a time.</span>
+  <span><kbd>Space</kbd> play/stop · <kbd>R</kbd> record · <kbd>Esc</kbd> stop all pads</span>
+  <span id="msg"></span>
+</footer>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+const $ = s => document.querySelector(s);
+const api = async (path, body) => {
+  const r = await fetch(path, body === undefined ? {headers: {"X-Token": TOKEN}} :
+    {method: "POST", headers: {"X-Token": TOKEN, "Content-Type": "application/json"}, body: JSON.stringify(body)});
+  const j = await r.json(); if (!r.ok) throw new Error(j.error || r.statusText); return j;
+};
+const PER_SONG = 6;
+const J = {st: null, clips: new Map(), tracks: {}, playing: false, t0: 0, lastBar: -1, rec: null, timer: null,
+           more: new Set(), hidden: new Set(), showMix: false};
+let ctx = null; const buffers = new Map();
+const msg = (t) => { $("#msg").textContent = t; };
+const hue = n => `hsl(${(n * 97 + 200) % 360},70%,58%)`;
+const barDur = () => J.st.bpb * 60 / J.st.bpm;
+const clipBars = id => Math.max(1, Math.round(J.clips.get(id)?.bars || 4));
+const timeOf = bar => J.t0 + bar * barDur();
+
+async function load(bpm) {
+  stopTransport();
+  const q = new URLSearchParams(); if (bpm) q.set("bpm", bpm);
+  J.st = await api("/api/jam?" + q); J.clips.clear(); J.tracks = {};
+  for (const t of J.st.tracks) {
+    J.tracks[t.name] = {active: null, queued: undefined, src: null, gain: null, vol: 1, muted: false};
+    for (const c of t.clips) J.clips.set(c.id, {...c, track: t.name});
+  }
+  $("#bpm").innerHTML = J.st.bpms.map(b => `<option>${b}</option>`).join(""); $("#bpm").value = J.st.bpm;
+  $("#bpmwrap").style.display = J.st.bpms.length > 1 ? "" : "none";
+  $("#beats").innerHTML = "<i></i>".repeat(J.st.bpb);
+  J.showMix = J.st.tracks.length === 1;
+  renderLegend();
+  render();
+  msg(`${J.st.bpm} BPM · drums & bass 4-bar loops, melody 8-bar · ${J.clips.size} pads`);
+}
+function renderLegend() {
+  const lg = $("#legend"); lg.innerHTML = "";
+  J.st.songs.forEach((s, i) => {
+    const b = document.createElement("button"); b.className = "chip" + (J.hidden.has(i) ? " off" : "");
+    b.style.setProperty("--c", hue(i)); b.textContent = s.song; b.title = "Show/hide this song's loops";
+    b.onclick = () => { J.hidden.has(i) ? J.hidden.delete(i) : J.hidden.add(i); renderLegend(); render(); };
+    lg.appendChild(b);
+  });
+  if (J.st.tracks.some(t => t.name === "mix") && J.st.tracks.length > 1) {
+    const b = document.createElement("button"); b.className = "chip mixchip" + (J.showMix ? "" : " off");
+    b.textContent = "Full mix column"; b.onclick = () => { J.showMix = !J.showMix; renderLegend(); render(); };
+    lg.appendChild(b);
+  }
+}
+function render() {
+  const wrap = $("#tracks"); wrap.innerHTML = "";
+  if (!J.st.tracks.length) { wrap.innerHTML = `<div class="empty">No loops found. Make slices first.</div>`; return; }
+  for (const t of J.st.tracks) {
+    if (t.name === "mix" && !J.showMix && J.tracks[t.name].active == null) continue;
+    const tr = J.tracks[t.name];
+    const col = document.createElement("div"); col.className = "track";
+    col.innerHTML = `<div class="thead"><b></b><button class="mute" title="Mute">M</button><button class="stop" title="Stop at next bar">■</button>
+      <input type="range" min="0" max="1.5" step="0.01" value="${tr.vol}" title="Volume"></div><div class="pads"></div>`;
+    col.querySelector("b").textContent = t.label + (t.clips[0] ? ` · ${t.clips[0].bars} bars` : "");
+    const mb = col.querySelector(".mute"); mb.classList.toggle("on", tr.muted);
+    mb.onclick = () => { tr.muted = !tr.muted; mb.classList.toggle("on", tr.muted); applyGain(t.name); };
+    col.querySelector(".stop").onclick = () => queue(t.name, null);
+    col.querySelector("input").oninput = ev => { tr.vol = +ev.target.value; applyGain(t.name); };
+    const pads = col.querySelector(".pads");
+    const all = t.clips.filter(c => !J.hidden.has(c.song_no) || J.tracks[t.name].active === c.id);
+    const shown = J.more.has(t.name) ? all : all.filter(c => c.rank < PER_SONG || c.kept || J.tracks[t.name].active === c.id);
+    for (const c of shown) {
+      const p = document.createElement("div"); p.className = "pad"; p.dataset.id = c.id; p.style.setProperty("--c", hue(c.song_no));
+      p.innerHTML = `<canvas></canvas><span class="lbl"></span><span class="tags"></span><span class="prog"></span>`;
+      p.querySelector(".lbl").textContent = `${c.song} · ${c.i}`;
+      const tags = p.querySelector(".tags");
+      if (c.kept) tags.insertAdjacentHTML("beforeend", "<span>✓</span>");
+      if (c.count > 1) tags.insertAdjacentHTML("beforeend", `<span>×${c.count}</span>`);
+      p.title = `${c.song}, ${t.label}, slice ${c.i}` + (c.count > 1 ? ` (repeats ${c.count}×)` : "") + (c.quiet ? " · quiet" : "");
+      p.onclick = () => queue(t.name, J.tracks[t.name].active === c.id && J.tracks[t.name].queued === undefined ? null : c.id);
+      p.onmouseenter = () => buffer(c.id).catch(() => {});
+      pads.appendChild(p);
+      requestAnimationFrame(() => wave(p.querySelector("canvas"), c.peaks));
+    }
+    if (all.length > shown.length || J.more.has(t.name)) {
+      const m = document.createElement("button"); m.className = "more";
+      m.textContent = J.more.has(t.name) ? "Show fewer" : `+ ${all.length - shown.length} more`;
+      m.onclick = () => { J.more.has(t.name) ? J.more.delete(t.name) : J.more.add(t.name); render(); };
+      pads.appendChild(m);
+    }
+    wrap.appendChild(col);
+  }
+  paint();
+}
+function wave(cv, peaks) {
+  const d = devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight; if (!w) return;
+  cv.width = w * d; cv.height = h * d; const g = cv.getContext("2d"); g.scale(d, d);
+  g.fillStyle = getComputedStyle(document.body).color; const bw = w / peaks.length;
+  peaks.forEach((v, i) => { const a = Math.min(1, v) * (h / 2 - 4); g.fillRect(i * bw, h / 2 - a, Math.max(1, bw - 1), Math.max(1, 2 * a)); });
+}
+function paint() {
+  document.querySelectorAll(".pad").forEach(p => {
+    const c = J.clips.get(p.dataset.id), tr = J.tracks[c.track];
+    p.classList.toggle("playing", tr.active === c.id);
+    p.classList.toggle("queued", tr.queued === c.id);
+    p.classList.toggle("stopping", tr.active === c.id && tr.queued === null);
+  });
+}
+
+// ---------------------------------------------------------------- audio
+function ensureCtx() { if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)(); return ctx; }
+function buffer(id) {
+  ensureCtx();
+  if (!buffers.has(id)) {
+    const c = J.clips.get(id);
+    buffers.set(id, fetch(`/audio?id=${encodeURIComponent(c.sid)}&f=${encodeURIComponent(c.file)}`, {headers: {"X-Token": TOKEN}})
+      .then(r => { if (!r.ok) throw new Error("audio " + r.status); return r.arrayBuffer(); })
+      .then(b => ctx.decodeAudioData(b)).then(b => (buffers.set(id, b), b)));
+  }
+  return Promise.resolve(buffers.get(id));
+}
+function trackGain(name) {
+  const tr = J.tracks[name];
+  if (!tr.gain) { tr.gain = ctx.createGain(); tr.gain.connect(ctx.destination); }
+  return tr.gain;
+}
+function applyGain(name) {
+  const tr = J.tracks[name], g = tr.muted ? 0 : tr.vol;
+  if (tr.gain) tr.gain.gain.setTargetAtTime(g, ctx.currentTime, 0.015);
+  if (J.rec && J.playing) recEvent(Math.max(J.rec.startBar, J.lastBar + 1), {track: name, gain: g});
+}
+async function queue(name, id) {
+  ensureCtx(); if (ctx.state === "suspended") await ctx.resume();
+  const tr = J.tracks[name];
+  if (id === null && !tr.active) { tr.queued = undefined; paint(); return; }
+  tr.queued = id; paint();
+  if (id) { try { await buffer(id); } catch (e) { msg("Could not load audio: " + e.message); tr.queued = undefined; paint(); return; } }
+  if (!J.playing && id) startTransport();
+}
+function nextBar() { return Math.max(0, Math.floor((ctx.currentTime - J.t0) / barDur()) + 1); }
+function startTransport() {
+  ensureCtx(); J.playing = true; J.t0 = ctx.currentTime + 0.12; J.lastBar = -1;
+  $("#play").classList.add("on"); $("#play").textContent = "■ Stop";
+  tick(); J.timer = setInterval(tick, 25); requestAnimationFrame(frame);
+}
+function stopTransport() {
+  if (J.rec) stopRec(true);
+  clearInterval(J.timer); J.timer = null; J.playing = false;
+  for (const tr of Object.values(J.tracks)) { if (tr.src) try { tr.src.stop(); } catch (e) {} tr.src = null; tr.active = null; tr.queued = undefined; }
+  $("#play").classList.remove("on"); $("#play").textContent = "▶ Play";
+  $("#counter").textContent = "1 · 1"; document.querySelectorAll("#beats i").forEach(i => i.classList.remove("on"));
+  document.querySelectorAll(".prog").forEach(p => p.style.width = 0);
+  if (J.st) paint();
+}
+function tick() {   // schedule the next bar boundary slightly ahead of time
+  if (!J.playing) return;
+  const b = Math.max(0, Math.floor((ctx.currentTime + 0.12 - J.t0) / barDur()));
+  for (let bar = J.lastBar + 1; bar <= b; bar++) applyBar(bar);
+  J.lastBar = Math.max(J.lastBar, b);
+}
+function applyBar(bar) {
+  const t = timeOf(bar);
+  if (J.rec && J.rec.endBar === bar) finishRec();
+  for (const [name, tr] of Object.entries(J.tracks)) {
+    if (tr.queued === undefined) continue;
+    const id = tr.queued;
+    if (id && !(buffers.get(id) instanceof AudioBuffer)) continue;     // still loading: try next bar
+    if (tr.src) { try { tr.src.stop(t); } catch (e) {} tr.src = null; }
+    tr.active = id; tr.queued = undefined;
+    if (id) {
+      const buf = buffers.get(id), src = ctx.createBufferSource();
+      src.buffer = buf; src.loop = true; src.connect(trackGain(name));
+      trackGain(name).gain.value = tr.muted ? 0 : tr.vol;
+      src.start(Math.max(t, ctx.currentTime), ((bar % clipBars(id)) * barDur()) % buf.duration);
+      tr.src = src;
+    }
+    if (J.rec && bar >= J.rec.startBar && (J.rec.endBar == null || bar < J.rec.endBar)) recEvent(bar, {track: name, clip: id});
+  }
+  if (J.rec && J.rec.startBar === bar) {        // recording starts: note what is already playing
+    for (const [name, tr] of Object.entries(J.tracks)) {
+      if (!J.rec.events.some(e => e.track === name && e.bar === 0 && "clip" in e)) recEvent(bar, {track: name, clip: tr.active});
+      recEvent(bar, {track: name, gain: tr.muted ? 0 : tr.vol});
+    }
+  }
+  setTimeout(paint, Math.max(0, (t - ctx.currentTime) * 1000));
+}
+function frame() {
+  if (!J.playing) return;
+  const pos = (ctx.currentTime - J.t0) / barDur();
+  if (pos >= 0) {
+    const bar = Math.floor(pos), beat = Math.floor((pos - bar) * J.st.bpb);
+    $("#counter").textContent = `${bar + 1} · ${beat + 1}`;
+    document.querySelectorAll("#beats i").forEach((el, i) => el.classList.toggle("on", i === beat));
+    for (const tr of Object.values(J.tracks)) {
+      const el = tr.active && document.querySelector(`.pad[data-id="${CSS.escape(tr.active)}"] .prog`);
+      if (el) el.style.width = ((pos % clipBars(tr.active)) / clipBars(tr.active)) * 100 + "%";
+    }
+    if (J.rec) $("#recinfo").textContent = `recording · ${Math.max(0, bar - J.rec.startBar + 1)} bars`;
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------------------------------------------------------------- recording
+function recEvent(bar, e) { if (J.rec) J.rec.events.push({bar: bar - J.rec.startBar, ...e}); }
+function startRec() {
+  ensureCtx();
+  const start = J.playing ? J.lastBar + 1 : 0;          // first bar that isn't scheduled yet
+  J.rec = {startBar: start, endBar: null, events: []};
+  $("#rec").classList.add("on"); $("#rec").textContent = "■ Stop rec";
+  $("#recinfo").textContent = J.playing ? "starts at next bar…" : "press a pad to start";
+}
+function stopRec(now) {
+  if (!J.rec) return;
+  if (now || !J.playing) { J.rec.endBar = J.playing ? Math.max(J.rec.startBar + 1, J.lastBar + 1) : J.rec.startBar; finishRec(); return; }
+  J.rec.endBar = Math.max(J.rec.startBar + 1, J.lastBar + 1);   // the scheduler may already be past nextBar()
+  $("#recinfo").textContent = "finishing at the end of this bar…";
+}
+async function finishRec() {
+  const r = J.rec; if (!r) return; J.rec = null;
+  $("#rec").classList.remove("on"); $("#rec").textContent = "● Record";
+  const bars = r.endBar - r.startBar;
+  if (bars < 1 || !r.events.some(e => e.clip)) { $("#recinfo").textContent = "nothing recorded"; return; }
+  $("#recinfo").textContent = `saving ${bars} bars…`;
+  try {
+    const j = await api("/api/jam/render", {bpm: J.st.bpm, bars, events: r.events});
+    $("#recinfo").textContent = `saved ${j.bars} bars (${j.seconds}s)`;
+    msg(`Saved to ${j.path} · mix + ${j.files.length - 1} stem file(s), drag them into your DAW`);
+  } catch (e) { $("#recinfo").textContent = "save failed"; msg("Could not save: " + e.message); }
+}
+
+// ---------------------------------------------------------------- controls
+$("#play").onclick = () => J.playing ? stopTransport() : (ensureCtx(), ctx.resume(), startTransport());
+$("#rec").onclick = () => J.rec ? stopRec(false) : startRec();
+$("#bpm").onchange = e => { buffers.clear(); load(+e.target.value); };
+$("#picker").href = "/?t=" + encodeURIComponent(TOKEN);
+document.addEventListener("keydown", ev => {
+  if (ev.target.tagName === "SELECT" || ev.target.tagName === "INPUT" || ev.metaKey || ev.ctrlKey) return;
+  if (ev.key === " ") { ev.preventDefault(); $("#play").click(); }
+  else if (ev.key === "r" || ev.key === "R") $("#rec").click();
+  else if (ev.key === "Escape") Object.keys(J.tracks).forEach(n => queue(n, null));
+});
+load().catch(e => { $("#tracks").innerHTML = ""; msg("Could not load: " + e.message); });
+</script>
+</body>
+</html>

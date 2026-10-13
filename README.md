@@ -5,9 +5,9 @@
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](https://github.com/VNL-Works/ai-music-slicer)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-Lock AI-generated music to a fixed BPM grid, then slice it by bar or beat.
+**AI songs in, best samples out.** Give `aislice` your AI-generated songs and a BPM; it hands you a folder of the best drum, bass and melody loops, ready to drag into a DAW. Nothing to click or audition in between.
 
-AI music (Suno, Udio, …) rarely holds a steady tempo: it drifts across the song, so it never lines up with a DAW grid. `aislice` tracks every beat, builds a clean tempo map, and time-stretches the song in **one variable-ratio pass**, so every beat lands exactly on the target grid. Pitch is preserved. Then it cuts sample-accurate slices.
+AI music (Suno, Udio, …) rarely holds a steady tempo: it drifts across the song, so it never lines up with a DAW grid. `aislice` tracks every beat, builds a clean tempo map, and time-stretches the song in **one variable-ratio pass**, so every beat lands exactly on the target grid. Pitch is preserved. Then it splits drums, bass and melody, cuts loops and keeps the best ones.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/tempo-before-after-dark.png">
@@ -23,74 +23,81 @@ Requirements: Python 3.10+, [ffmpeg](https://ffmpeg.org), and the [Rubber Band](
 ```bash
 # macOS
 brew install ffmpeg rubberband
-pip install aislice
-
-# latest from GitHub
-pip install git+https://github.com/VNL-Works/ai-music-slicer
+pip install "aislice[all]"          # [all] = stem splitting + bar detection (PyTorch, large)
 
 # or, for development
 git clone https://github.com/VNL-Works/ai-music-slicer && cd ai-music-slicer
-pip install -e .
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[all,dev]"
 ```
 
 ## Use
 
 ```bash
-aislice song.mp3 other.wav          # asks for BPM and slice unit
-aislice ./folder --bpm 206 --slice bar
+aislice songs/ --bpm 206
 ```
 
-Output (one folder per input):
+That's it. For every song it locks the tempo to 206 BPM, splits **drums, bass and melody**, cuts loops and ranks them. The best ones from all the songs of the run land in one folder, named after the date and time of the run:
 
 ```
-aislice_output/song_206bpm/
-├── song_206bpm.wav     # whole song locked to the grid (24-bit, source sample rate)
-├── slices/             # song_bar_001.wav, song_bar_002.wav, ...
-├── stems/              # optional: vocals.wav, drums.wav, … (with --stems)
-├── report.json         # detected tempo map, corrections, verification
-└── tempo.png           # before/after plot
+aislice_output/
+└── 2026-10-13_1613_206bpm/
+    ├── Drums_01_PianoCore_206bpm_Am_4bar25.wav     (4-bar loops)
+    ├── Bass_01_PianoCore1_206bpm_Am_4bar12.wav     (4-bar loops)
+    ├── Melody_01_PianoCore1_206bpm_Am_8bar02.wav   (8-bar loops)
+    ├── … _02 … _08 for each instrument
+    └── best.json
 ```
 
-Slice units: `1/16`, `1/8`, `beat`, `bar`, `2bar`, `4bar`, `8bar`, any `Nbar` / `Nbeat` (e.g. `16bar`, `3beat`), or `none`.
+- **01 = best.** Ranking: not "quiet" (leftover bleed from the splitter), then most repeated (in AI songs the part that keeps coming back is usually the hook), then fullest. Ranked across all songs of the run. `--best 12` keeps 12 per instrument (default 8).
+- **Fixed loop sizes:** drums and bass are 4-bar loops, melody 8-bar loops. Every file is exactly that long, so it sits on the DAW grid.
+- **Normalized:** every file peaks at −0.1 dB on its own. Near-silent slices are never boosted, so silence never turns into hiss.
+- **Tempo inside:** each loop has the BPM in its name and in an ACID chunk, and the key (a guess) when it's confident.
+- **Nothing else is left behind.** The working files (the locked song, stems, every loop) are deleted once the best loops are saved. Each run gets its own folder, so runs never mix.
 
-### Better bar detection (optional, recommended)
+Stem splitting is slow on a CPU: roughly 4× the song length (a 3-minute song ≈ 12 minutes). Apple Silicon and NVIDIA GPUs are much faster.
 
-```bash
-pip install "aislice[beats]"     # adds beat_this (MIT, CPJKU) + PyTorch
-```
+### Under the hood
 
-With the extra installed, `aislice` asks [beat_this](https://github.com/CPJKU/beat_this) which beat is bar 1. Its own precise beat grid still does the timing. If beat_this is unsure, it falls back to the built-in harmony rule. On the test tracks, beat_this agreed with the correct bar start on all four (99–100% of its downbeats), including one the built-in rule got wrong. Use `--downbeats harmony` to skip it, or `--downbeats beat_this` to require it. `pip install "aislice[all]"` installs both extras.
+**Bar detection:** with the `[beats]` extra (included in `[all]`), [beat_this](https://github.com/CPJKU/beat_this) decides which beat is bar 1; aislice's own beat grid does the precise timing. If beat_this is unsure, a built-in harmony rule decides.
 
-### Stems (optional)
-
-Split the locked song into stems that share its exact grid, and slice every stem with the same cut points as the mix:
-
-```bash
-pip install "aislice[stems]"                       # adds PyTorch + audio-separator (large)
-aislice song.mp3 --bpm 206 --slice 8bar --stems 3  # 2 = vocals/instrumental, 3 = drums/bass/melody, 4 = vocals/drums/bass/other, 6 = +guitar/piano
-aislice stems "aislice_output/song_206bpm" --stems 4   # add stems to an existing result
-```
-
-```
-aislice_output/song_206bpm/
-├── stems/          vocals.wav  drums.wav  bass.wav  other.wav
-└── slices_8bar/    song_8bar_001.wav …        (mix)
-    ├── vocals/     song_vocals_8bar_001.wav …
-    ├── drums/  …
-```
-
-Separation runs after the tempo is locked, so every stem lines up sample-exactly with the mix. `aislice reslice` moves the stems along with the mix. Presets use **BS-Roformer-SW** by default, a 6-stem BS-RoFormer model (vocals, drums, bass, guitar, piano, other) that won our listening test against Demucs `htdemucs_ft` and `htdemucs`. The 2, 3 and 4 presets merge its six stems, so nothing is lost. `--stems-fast` uses Demucs `htdemucs` (`htdemucs_6s` for 6 stems) instead: much faster on CPU, with lower quality. `--stems-exact` puts whatever the model leaves out into the melody/other stem, so the stems recombine to the mix exactly. For other models, pass `--stem-model` with any [audio-separator](https://github.com/nomadkaraoke/python-audio-separator) model, e.g. `htdemucs_ft.yaml` (Demucs v4, MIT licensed). Check each model's license before you use it. Models download once to `~/.cache/aislice/models` (BS-Roformer-SW is about 700 MB). On a 4-core CPU, BS-Roformer-SW takes roughly 4× the song length (a 3-minute song ≈ 12 minutes). Apple Silicon and NVIDIA GPUs are much faster.
+**Stems:** separation runs after the tempo is locked, so every stem lines up sample-exactly with the mix. The model is **BS-Roformer-SW** (6 stems, merged into drums / bass / melody), which won our listening test against Demucs `htdemucs_ft` and `htdemucs`. Models download once to `~/.cache/aislice/models` (about 700 MB). Check the model's license before commercial use.
 
 ### Fixing a wrong bar start
 
 If slice 1 doesn't start on the "1", move the bar start without re-processing:
 
 ```bash
-aislice reslice "aislice_output/song_206bpm" --shift 2      # bar 1 = 2 beats later
-aislice reslice "aislice_output/song_206bpm" --slice 4bar,8bar
+aislice reslice "aislice_output/.work_…/song_206bpm" --shift 2   # with --keep-work: bar 1 = 2 beats later
 ```
 
 `aislice` prints a warning when it isn't sure where bar 1 is.
+
+### Optional: hand-pick (Picker)
+
+Only if you want to audition loops yourself. The Picker needs the working files, so keep them for that run:
+
+```bash
+aislice songs/ --bpm 206 --keep-work
+aislice pick aislice_output/.work_2026-10-13_1613_206bpm/
+```
+
+A local page in your browser (nothing is uploaded). It opens on **★ Best of all songs**: the top loops per instrument across every song, ranked like the main output. Click a song on the left for its full grid, drawn to time (an 8-bar melody box is as wide as two 4-bar drum boxes). Empty slices are hidden, repeats share a tint, and the full mix row is hidden (`M` shows it).
+
+Keys: arrows move · `Space` plays (gapless loop) · `K` keep (group's best) · `Shift+K` keep the whole group · `S` skip the group · `U` undo · `A` play all stems at that spot, `1`–`9` mute stems · `B` Best/All · `C` compact · `E` show empty. **Export** copies your keeps to `aislice_output/_ready/` (same names, normalized, ACID tempo). Picks are saved in `_ready/picks.json` as you go. `aislice pick --auto --best 6` does it without the browser.
+
+### Optional: jam (launchpad)
+
+```bash
+aislice jam aislice_output/.work_2026-10-13_1613_206bpm/   # needs --keep-work, like the Picker
+```
+
+A launchpad in your browser. Every stem is a column of pads, filled with the best loops from all your songs at the same BPM (the most repeated parts first, empty slices left out). Click a pad and it starts on the next bar, in sync with everything else. Click it again to stop. One pad per column plays at a time, so you can put the drums of one song under the melody of another.
+
+- Press **Record**, play, press it again: the jam is saved to `_ready/jams/Jam_<time>_<bpm>bpm/` as a mix plus one WAV per column, all starting on bar 1, normalized, with the tempo inside. Drag them into your DAW as a finished arrangement.
+- What you hear is what gets saved: the recording is rendered sample-exact from the original slices, not captured from the speakers.
+- Drums and bass pads loop every 4 bars, melody every 8, all phrase-aligned. Volume slider and **M** (mute) per column, **■** stops a column at the next bar. Song chips turn songs on and off; "+ more" shows every loop.
+- Keys: `Space` play/stop, `R` record, `Esc` stop all pads.
 
 ## How it works
 

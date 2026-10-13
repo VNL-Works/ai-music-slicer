@@ -18,7 +18,7 @@ from .verify import verify
 @dataclass
 class Options:
     bpm: float
-    slice_unit: str = "bar"          # bar, beat, 2bar, 4bar, 1/8, 1/16, none
+    slice_unit: str = "standard"     # standard (mix/melody 8bar, drums/bass 4bar), or bar, 4bar, 1/8, ..., none
     beats_per_bar: int = 4
     out_root: Path = Path("aislice_output")
     fmt: str = "wav"
@@ -88,22 +88,25 @@ def process(path: Path, opt: Options, log=print) -> Path:
         y_out = warp.render(wav, wp, sr)
 
     full = out_dir / f"{stem}_{bpm_tag}bpm.{opt.fmt}"
+    y_raw = y_out                                    # stems are separated from the un-normalized song
+    y_out, g_mix = io.normalize(y_out)
     io.write(full, y_out, sr, opt.fmt, opt.bit_depth)
 
     # 4. slices
     slice_info = None
     if opt.slice_unit != "none":
-        upb = slicer.unit_beats(opt.slice_unit, opt.beats_per_bar)
-        n_sl = slicer.write_slices(y_out, sr, opt.bpm, opt.slice_unit, opt.beats_per_bar, out_dir, stem,
+        mix_unit = slicer.standard_unit("mix") if opt.slice_unit == slicer.STANDARD else opt.slice_unit
+        upb = slicer.unit_beats(mix_unit, opt.beats_per_bar)
+        n_sl = slicer.write_slices(y_out, sr, opt.bpm, mix_unit, opt.beats_per_bar, out_dir, stem,
                                    opt.fade_ms, opt.drop_partial, opt.fmt, opt.bit_depth)
-        slice_info = {"unit": opt.slice_unit, "count": n_sl,
+        slice_info = {"unit": mix_unit, "layout": opt.slice_unit, "count": n_sl,
                       "samples_per_slice": round(upb * 60 / opt.bpm * sr, 3),
                       "first_downbeat_slice": int(round(wp.first_downbeat_out_s / (upb * 60 / opt.bpm))) + 1}
 
     # 4b. stems (optional): separate the grid-locked song, slice each stem on the same grid
     stems_info = None
     if opt.stems or opt.stem_model:
-        stems_info = add_stems(out_dir, y_out, sr, opt.bpm, opt.beats_per_bar, stem,
+        stems_info = add_stems(out_dir, y_raw, sr, opt.bpm, opt.beats_per_bar, stem,
                                [opt.slice_unit] if opt.slice_unit != "none" else [],
                                opt.stems or "4", opt.stem_model, opt.model_dir, opt.fade_ms,
                                opt.drop_partial, opt.bit_depth, log, fast=opt.stems_fast,
@@ -136,6 +139,7 @@ def process(path: Path, opt: Options, log=print) -> Path:
         "verification": {k: val for k, val in v.items() if not k.startswith("_")},
         "slices": slice_info,
         "stems": stems_info,
+        "normalize": {"peak_db": io.PEAK_DB, "gains_db": {"mix": g_mix, **((stems_info or {}).get("gains_db") or {})}},
         "duration": {"source_s": round(src_dur, 3), "output_s": round(len(y_out) / sr, 3)},
     }
     (out_dir / "report.json").write_text(json.dumps(report, indent=2))
@@ -161,12 +165,16 @@ def add_stems(out_dir: Path, y: np.ndarray, sr: int, bpm: float, beats_per_bar: 
               units: list[str], preset: str = "4", model: str | None = None, model_dir: Path | None = None,
               fade_ms: float = 1.0, drop_partial: bool = False, bit_depth: str = "24", log=print,
               backend=None, fast: bool = False, exact: bool = False) -> dict:
-    """Separate `y` (already on the grid) into stems/, then slice each stem for every unit."""
+    """Separate `y` (already on the grid, NOT normalized) into stems/, normalize each stem on its own, then
+    slice each stem for every unit. The stem gains are returned as "gains_db"."""
     from . import stems as st
 
     log(f"  separating stems ({model or st.preset_model(preset, fast)}) ...")
     res = st.separate(y, sr, preset=preset, model=model, model_dir=model_dir, backend=backend, fast=fast,
                       exact=exact)
+    gains = {}
+    for name in list(res.stems):
+        res.stems[name], gains[name] = io.normalize(res.stems[name])
     st.write_stems(res, out_dir, sr, bit_depth)
     counts = {u: slicer.write_stem_slices(res.stems, sr, bpm, u, beats_per_bar, out_dir, song_stem,
                                           fade_ms=fade_ms, drop_partial=drop_partial, bit_depth=bit_depth)
@@ -175,7 +183,7 @@ def add_stems(out_dir: Path, y: np.ndarray, sr: int, bpm: float, beats_per_bar: 
         + (", leftover added back)" if exact else ")"))
     return {"model": res.model, "preset": None if model else preset, "names": list(res.stems),
             "alignment_shift_samples": res.lag_samples, "residual_db": res.residual_db, "exact": exact,
-            "sliced_units": units, "notes": res.notes}
+            "sliced_units": units, "notes": res.notes, "gains_db": gains}
 
 
 def choose_downbeat(tm, mono: np.ndarray, sr: int, mode: str = "auto", log=print) -> dict:

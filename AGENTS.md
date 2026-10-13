@@ -9,7 +9,7 @@ Guidance for AI coding agents (and humans) working on this repo.
 ```bash
 brew install ffmpeg rubberband        # system deps (Linux: apt install ffmpeg rubberband-cli)
 pip install -e .
-aislice ./temp --bpm 206 --slice 8bar # or run with no flags for interactive prompts
+aislice ./temp --bpm 206              # songs in, best samples out (aislice_output/<date>_<time>_206bpm/)
 python -m aislice --help
 ```
 
@@ -26,12 +26,28 @@ src/aislice/
   stems.py      optional stem separation via audio-separator (lazy import; [stems] extra), resample/align/merge
   stems_cmd.py  `aislice stems`: add stems to an existing result
   downbeats.py  optional beat_this downbeats ([beats] extra): votes which grid beat is bar 1
+  pick.py       Picker analysis: empty slices, beat-by-beat repeat groups per stem, key estimate, pick_cache.json
+  export.py     picks.json, DAW-ready names, ACID chunk, export to <output>/_ready/
+  picker_server.py  `aislice pick`: stdlib http.server on 127.0.0.1 (token + Host check) serving picker.html + JSON API
+  picker.html   the Picker page (vanilla JS, Web Audio loops); shipped in the wheel
+  jam.py        Jam pad: pad list from Picker analysis, sample-exact render of recorded bar events, save to _ready/jams/
+  jam.html      the Jam page (`aislice jam`, /jam): bar-quantised clip launching with a Web Audio look-ahead scheduler
   verify.py     re-track the output and measure beat error vs. the ideal grid
   report.py     before/after tempo plot
   io.py         ffmpeg decode, soundfile read/write
 ```
 
+## The product (the user's MUST)
+AI songs in (BPM given with --bpm) → best samples out: `aislice_output/<YYYY-MM-DD_HHMM>_<bpm>bpm/<Stem>_<NN>_….wav`,
+flat, one folder per run (keep folder depth minimal). Working files go to `.work_<session>/` and are deleted afterwards
+unless `--keep-work`. **No interactive prompts and no
+required human step in between.** The Picker and Jam are optional extras the user runs explicitly. Don't add menus,
+questions or size options to the main flow.
+
 ## Invariants: don't break these
+- **Standard loop layout:** drums and bass 4-bar, melody/other stems and the full mix 8-bar (`slicer.standard_unit`).
+- **Every audio file written is peak-normalized on its own to -0.1 dB** (`io.normalize`), except near-silent slices (`io.SILENT_DB` below their track). Record every gain (report.json `normalize.gains_db`, `_gains.json` per slice folder) and undo it wherever real levels matter (Picker analysis, stems separation, reslice).
+- **Stems are always split** (preset 3: drums / bass / melody) in the main command; separation runs on the un-normalized song.
 - **Warp in one pass** with a time map. Never stretch slice-by-slice (it causes seams and drift).
 - **Slice points are computed cumulatively** (`round(k * samples_per_unit)`), so rounding never accumulates. Full slices may differ by at most 1 sample.
 - **Pitch is preserved**; only time changes.
@@ -41,7 +57,11 @@ src/aislice/
 - **Batch runs keep going when one file fails.**
 - **Stems are separated from the grid-locked song, never from the source**, so they share its grid. Each stem is resampled back to the song's rate, padded or trimmed to its exact length, and lag-corrected against the mix. Anything that moves the mix (e.g. `reslice`) must move the stems identically.
 - **beat_this only picks bar 1, never the beat times.** Its beats are 20 ms-quantised and ~10 ms late on our tracks. The warp needs aislice's ~1 ms grid.
-- **The ML stack stays optional.** Import `audio_separator`/`beat_this`/torch only inside `stems.run_backend` / `downbeats.detect_downbeats`. The core install and the CLI's `--help` must work without them.
+- **The Picker never changes results.** It only reads report.json and slices; it writes pick_cache.json in song folders and everything else under `<output>/_ready/`. Export removes only files the previous export wrote.
+- **Picker groups compare slices beat by beat in order, and only against a group's leader** (no chaining). Don't switch to slice-averaged features: `test_order_matters_but_averages_dont` guards this.
+- **The Picker server binds to 127.0.0.1 only**, checks a per-run token and the Host header, and serves only `.wav` files inside a song folder.
+- **Jam playback and render must agree.** A clip launched at bar b plays from its bar (b mod clip_bars) in both jam.html and `jam.render`, so the saved file matches what was heard.
+- **ML imports stay lazy.** Import `audio_separator`/`beat_this`/torch only inside `stems.run_backend` / `downbeats.detect_downbeats`, so `--help`, the tests and the Picker work without them. The main command needs `[stems]` (it says so and exits if missing); install with `.[all]`.
 
 ## Verifying changes
 - Run `pytest` (install with `pip install -e ".[dev]"`). Stem tests use a fake separator. The real-model tests run only with `AISLICE_REAL_STEMS=1` / `AISLICE_REAL_BEATS=1` (needs `.[all]` and network for the model downloads). `tests/synth.py` builds drifting click+chord tracks with exact ground truth. `test_beats_sit_on_attacks_not_after` and `test_downbeat_uses_harmony_not_accents` are regression guards for real bugs: keep them passing, and don't loosen their tolerances to make a change pass.

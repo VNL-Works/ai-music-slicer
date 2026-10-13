@@ -104,14 +104,16 @@ def test_add_stems_to_existing_result(tmp_path):
     d, mix = _result(tmp_path)
     info = add_stems_to_result(d, "4", backend=fake_backend(), log=lambda *a: None)
     assert sorted(p.name for p in (d / "stems").glob("*.wav")) == ["bass.wav", "drums.wav", "other.wav", "vocals.wav"]
-    # every stem sliced on the same grid as the mix: 20 s @120 BPM = 10 bars / 2.5 x 4-bar
-    for unit, n in (("slices", 10), ("slices_4bar", 3)):
-        for name in ("vocals", "drums", "bass", "other"):
+    # standard layout on the mix's grid: 20 s @120 BPM = 10 bars -> drums/bass 3 x 4-bar, the rest 2 x 8-bar
+    for unit, names, n in (("slices_4bar", ("drums", "bass"), 3), ("slices_8bar", ("vocals", "other"), 2)):
+        for name in names:
             files = sorted((d / unit / name).glob("*.wav"))
             assert len(files) == n
             assert files[0].name.startswith(f"song_{name}_")
-    a = sf.read(d / "slices" / "vocals" / "song_vocals_bar_001.wav")[0]
-    assert len(a) == 2 * 48000
+    assert not (d / "slices_4bar" / "vocals").exists() and not (d / "slices_8bar" / "drums").exists()
+    a = sf.read(d / "slices_4bar" / "drums" / "song_drums_4bar_001.wav")[0]
+    assert len(a) == 8 * 48000
+    assert abs(20 * np.log10(np.abs(a).max()) + 0.1) < 0.01          # every slice peaks at -0.1 dB
     assert json.loads((d / "report.json").read_text())["stems"]["names"] == info["names"]
 
 
@@ -120,12 +122,15 @@ def test_reslice_moves_stems_with_the_mix(tmp_path):
     add_stems_to_result(d, "4", units=["bar"], backend=fake_backend(), log=lambda *a: None)
     reslice(d, shift_beats=1, log=lambda *a: None)   # music starts at 0 -> pickup padded to a full bar
     y, sr = sf.read(d / "song_120bpm.wav", always_2d=True)
-    total = sum(sf.read(p, always_2d=True)[0] for p in (d / "stems").glob("*.wav"))
+    g = json.loads((d / "report.json").read_text())["normalize"]["gains_db"]
+    y = y * 10 ** (-g["mix"] / 20)                     # files are normalized on their own: compare real levels
+    total = sum(sf.read(p, always_2d=True)[0] * 10 ** (-g[p.stem] / 20) for p in (d / "stems").glob("*.wav"))
     assert total.shape == y.shape
     err = np.mean((y - total) ** 2) / np.mean(y ** 2)
     assert err < 1e-3                                  # stems still line up with the moved mix
-    n_mix = len(list((d / "slices").glob("*.wav")))
-    assert all(len(list((d / "slices" / s).glob("*.wav"))) == n_mix for s in ("vocals", "drums", "bass", "other"))
+    # every stem re-cut on the moved grid (11 bars now), and only where stems were before
+    assert {len(list((d / "slices" / s).glob("*.wav"))) for s in ("vocals", "drums", "bass", "other")} == {11}
+    assert not any(p.is_dir() for p in (d / "slices_4bar").iterdir())
 
 
 def test_cli_without_extra_fails_early(monkeypatch, tmp_path, capsys):

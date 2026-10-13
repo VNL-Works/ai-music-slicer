@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.4.0 (2026-10-14)
+
+- **AI songs in, best samples out.** `aislice songs/ --bpm 206` now goes all the way: tempo lock, stems (drums / bass / melody, always), loops, and the best loops of all songs of the run, ranked, in one flat folder per run: `aislice_output/<date>_<time>_<bpm>bpm/Drums_01_….wav` (`--best N`, default 8). No prompts: `--bpm` is required. The working files are deleted at the end (`--keep-work` keeps them for the Picker / Jam / reslice).
+- **One loop layout everywhere:** drums and bass in 4-bar loops, melody (and the full mix) in 8-bar loops. The slice-size question and menus are gone (`--slice` still exists, hidden, for special cases).
+- **Every audio file is normalized** on its own to a −0.1 dB peak: the song, stems, slices, exports and jams. Near-silent slices are not boosted. Gains are stored (`report.json` → `normalize`, `_gains.json` next to slices) so the Picker still sees the real levels.
+- Picker: opens on **★ Best of all songs**, rows drawn to time scale, the full mix row hidden by default (`M`). Jam: fixed loop sizes, fixed a bug where stopping a recording in the last moment of a bar never finished it.
+- `aislice reslice` keeps each stem in the folder it was in, and re-normalizes.
+- **Picker (`aislice pick`).** A local browser page to audition every slice in a grid (mix + stems), keep or skip with the keyboard and export the keepers DAW-ready to `_ready/`. `--pick` opens it after processing.
+  - Empty and near-empty slices are hidden; quiet (likely bleed) slices are labelled.
+  - Repeats are grouped per stem by comparing slices beat by beat, so a verse and a chorus on the same chords stay apart. Groups don't chain; the most typical slice represents each group.
+  - Export names like `Song_Drums_206bpm_Am_8bar03.wav`, an ACID tempo chunk in every file, key estimate (only in the name when confident), `--group-by song|stem|flat`, `picks.json` saved as you go.
+  - **Best** view (default): the top N loops per stem, ranked by not-quiet, most repeated, fullest. `B` toggles Best/All.
+  - `aislice pick --auto` keeps one slice per group and exports without a browser; `--best N` keeps only the N best per stem.
+  - The server only listens on 127.0.0.1, needs a per-run token and only serves files inside the output folder.
+- **Jam pad (`aislice jam`).** A launchpad in the browser: one column per stem, pads from all songs at the same BPM, bar-quantised launch, loops stay phrase-aligned. Record a jam and get a sample-exact mix + one WAV per column in `_ready/jams/`.
+
 ## 0.3.0 (2026-10-12)
 
 - Stems now default to **BS-Roformer-SW** (6-stem BS-RoFormer), which won a second listening test against `htdemucs_ft`. The 2/3/4 presets merge its six stems. `--stems-fast` still uses Demucs `htdemucs` (`htdemucs_6s` for 6 stems). The old default is still available with `--stem-model htdemucs_ft.yaml`.
